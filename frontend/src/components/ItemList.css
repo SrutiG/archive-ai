@@ -104,22 +104,50 @@
 }
 
 .item-info h3 {
-  margin: 0 0 0.75rem 0;
+  margin: 0 0 0.5rem 0;
   font-size: 1rem;
   color: #333;
   font-weight: 600;
 }
 
+.item-description {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 0 0 0.75rem 0;
+  line-height: 1.4;
+}
+
+.item-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.edit-btn,
 .delete-btn {
-  width: 100%;
+  flex: 1;
   padding: 0.5rem;
-  background: #fee;
-  color: #c33;
-  border: 1px solid #fcc;
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.9rem;
   transition: all 0.3s;
+  border: 1px solid;
+}
+
+.edit-btn {
+  background: #e8f4f8;
+  color: #0066cc;
+  border-color: #b3d9ff;
+}
+
+.edit-btn:hover:not(:disabled) {
+  background: #d4e8f0;
+  border-color: #99ccff;
+}
+
+.delete-btn {
+  background: #fee;
+  color: #c33;
+  border-color: #fcc;
 }
 
 .delete-btn:hover:not(:disabled) {
@@ -127,6 +155,7 @@
   border-color: #faa;
 }
 
+.edit-btn:disabled,
 .delete-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;

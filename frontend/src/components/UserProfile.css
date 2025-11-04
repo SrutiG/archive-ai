@@ -63,3 +63,29 @@
   border: 1px solid #c3e6cb;
 }
 
+.style-preferences-textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.3s;
+  min-height: 100px;
+}
+
+.style-preferences-textarea:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.error-message {
+  background: #fee;
+  color: #c33;
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border: 1px solid #fcc;
+}
+

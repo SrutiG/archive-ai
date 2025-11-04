@@ -28,6 +28,7 @@ export interface UserProfile {
   weight?: number;
   heightUnit?: 'inches' | 'cm';
   weightUnit?: 'lbs' | 'kg';
+  stylePreferences?: string;
 }
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
@@ -103,6 +104,7 @@ function App() {
         <ItemList 
           items={items} 
           onItemDeleted={handleItemDeleted}
+          onItemUpdated={handleItemAdded}
           apiUrl={API_BASE_URL}
         />
         

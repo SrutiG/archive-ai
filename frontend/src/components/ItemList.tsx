@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import './ItemList.css';
 import { WardrobeItem } from '../App';
+import ItemEdit from './ItemEdit';
 
 interface ItemListProps {
   items: WardrobeItem[];
   onItemDeleted: () => void;
+  onItemUpdated: () => void;
   apiUrl: string;
 }
 
-const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, apiUrl }) => {
+const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated, apiUrl }) => {
   const [viewMode, setViewMode] = useState<'all' | 'category'>('all');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this item?')) {
@@ -55,6 +58,24 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, apiUrl }) => 
     );
   }
 
+  const editingItem = editingId ? items.find(item => item.id === editingId) : null;
+
+  if (editingItem) {
+    return (
+      <div className="ItemList">
+        <ItemEdit
+          item={editingItem}
+          onItemUpdated={() => {
+            setEditingId(null);
+            onItemUpdated();
+          }}
+          onCancel={() => setEditingId(null)}
+          apiUrl={apiUrl}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="ItemList">
       <div className="ItemList-header">
@@ -92,13 +113,23 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, apiUrl }) => 
               </div>
               <div className="item-info">
                 <h3>{item.title}</h3>
-                <button
-                  className="delete-btn"
-                  onClick={() => handleDelete(item.id)}
-                  disabled={deletingId === item.id}
-                >
-                  {deletingId === item.id ? 'Deleting...' : '🗑️ Delete'}
-                </button>
+                {item.description && <p className="item-description">{item.description.substring(0, 60)}...</p>}
+                <div className="item-actions">
+                  <button
+                    className="edit-btn"
+                    onClick={() => setEditingId(item.id)}
+                    disabled={deletingId === item.id || editingId !== null}
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    className="delete-btn"
+                    onClick={() => handleDelete(item.id)}
+                    disabled={deletingId === item.id || editingId !== null}
+                  >
+                    {deletingId === item.id ? 'Deleting...' : '🗑️ Delete'}
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -125,13 +156,23 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, apiUrl }) => 
                     </div>
                     <div className="item-info">
                       <h3>{item.title}</h3>
-                      <button
-                        className="delete-btn"
-                        onClick={() => handleDelete(item.id)}
-                        disabled={deletingId === item.id}
-                      >
-                        {deletingId === item.id ? 'Deleting...' : '🗑️ Delete'}
-                      </button>
+                      {item.description && <p className="item-description">{item.description.substring(0, 60)}...</p>}
+                      <div className="item-actions">
+                        <button
+                          className="edit-btn"
+                          onClick={() => setEditingId(item.id)}
+                          disabled={deletingId === item.id || editingId !== null}
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          className="delete-btn"
+                          onClick={() => handleDelete(item.id)}
+                          disabled={deletingId === item.id || editingId !== null}
+                        >
+                          {deletingId === item.id ? 'Deleting...' : '🗑️ Delete'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -93,6 +93,7 @@ export interface UserProfile {
   weight?: number; // in lbs or kg
   heightUnit?: 'inches' | 'cm';
   weightUnit?: 'lbs' | 'kg';
+  stylePreferences?: string; // Personal style preferences description
 }
 
 // Load data from storage on startup
@@ -292,6 +293,9 @@ app.post('/api/outfits/generate', async (req, res) => {
     // Generate outfits using LLM with user profile and item descriptions
     console.log('Calling LLM to generate outfit combinations...');
     console.log(`User profile: Height ${userProfile.height || 'N/A'} ${userProfile.heightUnit || ''}, Weight ${userProfile.weight || 'N/A'} ${userProfile.weightUnit || ''}`);
+    if (userProfile.stylePreferences) {
+      console.log(`Style preferences: ${userProfile.stylePreferences.substring(0, 100)}...`);
+    }
     const outfits = await generateOutfits(itemsByCategory, userProfile);
     console.log(`Generated ${outfits.length} outfit combinations`);
     
@@ -326,6 +330,88 @@ app.get('/api/outfits/status', (req, res) => {
   };
   console.log(`Outfit generation status: ${status.clicksUsed}/${status.maxClicks} clicks used, ${status.remaining} remaining`);
   res.json(status);
+});
+
+// Update an item
+app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`Updating item with ID: ${id}`);
+    
+    const itemIndex = wardrobeItems.findIndex(item => item.id === id);
+    
+    if (itemIndex === -1) {
+      console.log(`Item not found: ${id}`);
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    const existingItem = wardrobeItems[itemIndex];
+    const { title, category, description, measurements } = req.body;
+    
+    if (!title) {
+      console.error('Title is missing');
+      return res.status(400).json({ error: 'Title is required' });
+    }
+
+    if (!category) {
+      console.error('Category is missing');
+      return res.status(400).json({ error: 'Category is required' });
+    }
+
+    console.log(`Updating item: "${existingItem.title}" -> "${title}"`);
+
+    // Handle new photo upload if provided
+    let imageUrl = existingItem.imageUrl;
+    if (req.file) {
+      // Delete old image file
+      const oldFilePath = path.join(__dirname, '../uploads', path.basename(existingItem.imageUrl));
+      if (fs.existsSync(oldFilePath)) {
+        fs.unlinkSync(oldFilePath);
+        console.log(`Deleted old file: ${oldFilePath}`);
+      }
+      // Use new image
+      imageUrl = `/uploads/${req.file.filename}`;
+      console.log(`  New file: ${req.file.originalname} (${(req.file.size / 1024).toFixed(2)} KB)`);
+    }
+
+    // Parse measurements if provided
+    let parsedMeasurements: WardrobeItem['measurements'] = existingItem.measurements;
+    if (measurements) {
+      try {
+        parsedMeasurements = typeof measurements === 'string' 
+          ? JSON.parse(measurements) 
+          : measurements;
+        console.log('  Measurements:', parsedMeasurements);
+      } catch (e) {
+        console.warn('Failed to parse measurements, keeping existing');
+      }
+    }
+
+    // Update the item
+    const updatedItem: WardrobeItem = {
+      ...existingItem,
+      title,
+      category,
+      description: description || undefined,
+      measurements: parsedMeasurements,
+      imageUrl
+    };
+
+    wardrobeItems[itemIndex] = updatedItem;
+    console.log(`Item updated successfully: "${updatedItem.title}"`);
+
+    // Save to persistent storage
+    saveItems(wardrobeItems);
+
+    res.json(updatedItem);
+  } catch (error) {
+    console.error('Error updating item:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', error.message);
+      console.error('Stack:', error.stack);
+    }
+    res.status(500).json({ error: 'Failed to update item' });
+  }
 });
 
 // Delete an item
@@ -370,16 +456,20 @@ app.get('/api/user/profile', (req, res) => {
 // Update user profile
 app.post('/api/user/profile', (req, res) => {
   try {
-    const { height, weight, heightUnit, weightUnit } = req.body;
+    const { height, weight, heightUnit, weightUnit, stylePreferences } = req.body;
     
     userProfile = {
       height: height ? Number(height) : undefined,
       weight: weight ? Number(weight) : undefined,
       heightUnit: heightUnit || 'inches',
-      weightUnit: weightUnit || 'lbs'
+      weightUnit: weightUnit || 'lbs',
+      stylePreferences: stylePreferences || undefined
     };
     
     console.log('Updated user profile:', userProfile);
+    if (stylePreferences) {
+      console.log(`Style preferences: ${stylePreferences.substring(0, 100)}...`);
+    }
     saveUserProfile(userProfile);
     
     res.json(userProfile);

@@ -61,7 +61,7 @@ const UserProfileComponent: React.FC<UserProfileProps> = ({ apiUrl }) => {
     <div className="UserProfile">
       <h2>Your Profile</h2>
       <p className="profile-description">
-        Add your measurements to help generate better-fitting outfit combinations
+        Add your measurements and style preferences to help generate better-fitting and personalized outfit combinations
       </p>
       <form onSubmit={handleSubmit}>
         <div className="profile-grid">
@@ -110,6 +110,22 @@ const UserProfileComponent: React.FC<UserProfileProps> = ({ apiUrl }) => {
               </select>
             </div>
           </div>
+        </div>
+
+        <div className="form-group" style={{ marginTop: '1.5rem' }}>
+          <label htmlFor="stylePreferences">Style Preferences</label>
+          <textarea
+            id="stylePreferences"
+            value={profile.stylePreferences || ''}
+            onChange={(e) => setProfile({ ...profile, stylePreferences: e.target.value })}
+            placeholder="Describe your personal style (e.g., 'Minimalist, monochrome, oversized fits, avant-garde pieces. Prefer structured silhouettes and architectural details.')"
+            rows={4}
+            disabled={loading}
+            className="style-preferences-textarea"
+          />
+          <small style={{ color: '#666', fontSize: '0.85rem', marginTop: '0.25rem', display: 'block' }}>
+            This helps the AI generate outfits that match your personal style preferences
+          </small>
         </div>
 
         {error && <div className="error-message">{error}</div>}

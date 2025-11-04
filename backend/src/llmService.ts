@@ -97,7 +97,7 @@ export async function categorizeItem(title: string, imagePath: string): Promise<
 
 export async function generateOutfits(
   itemsByCategory: Record<string, WardrobeItem[]>,
-  userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string }
+  userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string }
 ): Promise<string[][]> {
   try {
     console.log('[LLM] Starting outfit generation...');
@@ -132,8 +132,18 @@ export async function generateOutfits(
     // Build user profile context
     let userContext = '';
     if (userProfile) {
+      const contextParts: string[] = [];
+      
       if (userProfile.height && userProfile.weight) {
-        userContext = `User profile: Height ${userProfile.height} ${userProfile.heightUnit || 'inches'}, Weight ${userProfile.weight} ${userProfile.weightUnit || 'lbs'}. `;
+        contextParts.push(`Height ${userProfile.height} ${userProfile.heightUnit || 'inches'}, Weight ${userProfile.weight} ${userProfile.weightUnit || 'lbs'}`);
+      }
+      
+      if (userProfile.stylePreferences) {
+        contextParts.push(`Style preferences: ${userProfile.stylePreferences}`);
+      }
+      
+      if (contextParts.length > 0) {
+        userContext = `User profile: ${contextParts.join('. ')}. `;
       }
     }
 
@@ -146,13 +156,14 @@ export async function generateOutfits(
           role: 'system',
           content: `You are a fashion stylist. Generate 5-7 outfit combinations using the available wardrobe items. 
           Each outfit should include items from different categories that work well together.
+          Pay close attention to the user's style preferences and personal aesthetic when creating combinations.
           Return the outfits as a JSON object with a key "outfits" containing an array of arrays, where each inner array contains the titles of items in that outfit.
           Example format: {"outfits": [["Blue Shirt", "Black Jeans", "White Sneakers"], ["Red Dress", "Black Heels"]]}
           Only return the JSON object, no other text.`
         },
         {
           role: 'user',
-          content: `${userContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations. Return a JSON object with an "outfits" key containing an array of arrays with item titles.`
+          content: `${userContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Return a JSON object with an "outfits" key containing an array of arrays with item titles.`
         }
       ],
       max_tokens: 500,
