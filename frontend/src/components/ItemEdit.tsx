@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ItemInput.css';
 import { WardrobeItem } from '../App';
+import { SectionHeader, Button } from '../design-system';
 
 interface ItemEditProps {
   item: WardrobeItem;
@@ -283,10 +284,10 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
   return (
     <div className="ItemInput">
       <div className="edit-header">
-        <h2>Edit Item</h2>
-        <button onClick={onCancel} className="btn btn-secondary" disabled={loading}>
+        <SectionHeader title="Edit Item" />
+        <Button variant="secondary" size="medium" onClick={onCancel} disabled={loading}>
           Cancel
-        </button>
+        </Button>
       </div>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
@@ -350,22 +351,24 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
           <div className="photo-options">
             {!isCameraOpen && (
               <>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="medium"
                   onClick={openCamera}
-                  className="btn btn-secondary"
                   disabled={loading}
                 >
                   📷 Take New Photo
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="medium"
                   onClick={() => fileInputRef.current?.click()}
-                  className="btn btn-secondary"
                   disabled={loading}
                 >
                   📁 Choose New File
-                </button>
+                </Button>
               </>
             )}
             <input
@@ -381,20 +384,23 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
             <div className="camera-container">
               <video ref={videoRef} autoPlay playsInline className="camera-video" />
               <div className="camera-controls">
-                <button
+                <Button
                   type="button"
+                  variant="primary"
+                  size="medium"
                   onClick={capturePhoto}
-                  className="btn btn-primary capture-btn"
+                  className="capture-btn"
                 >
                   Capture
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="medium"
                   onClick={closeCamera}
-                  className="btn btn-secondary"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -402,8 +408,10 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
           {preview && !isCameraOpen && (
             <div className="preview-container">
               <img src={preview} alt="Preview" className="preview-image" />
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="small"
                 onClick={() => {
                   setPreview(photo ? null : `${apiUrl}${item.imageUrl}`);
                   setPhoto(null);
@@ -411,10 +419,9 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
                     fileInputRef.current.value = '';
                   }
                 }}
-                className="btn btn-small"
               >
                 {photo ? 'Remove New Photo' : 'Keep Current Photo'}
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -422,21 +429,23 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
         {error && <div className="error-message">{error}</div>}
 
         <div className="form-actions">
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="medium"
             onClick={onCancel}
-            className="btn btn-secondary"
             disabled={loading}
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
-            className="btn btn-primary"
+            variant="primary"
+            size="medium"
             disabled={loading || !title.trim() || !category}
           >
             {loading ? 'Updating...' : 'Update Item'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

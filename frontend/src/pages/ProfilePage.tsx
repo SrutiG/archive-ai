@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './ProfilePage.css';
 import { UserProfile } from '../App';
 import BrandAutocomplete from '../components/BrandAutocomplete';
+import { PageHeader, SectionHeader, Button } from '../design-system';
 
 interface ProfilePageProps {
   apiUrl: string;
@@ -60,16 +61,14 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
 
   return (
     <div className="ProfilePage">
-      <div className="page-header">
-        <h1>Your Profile</h1>
-        <p className="page-description">
-          Add your measurements and style preferences to help generate better-fitting and personalized outfit combinations
-        </p>
-      </div>
+      <PageHeader
+        title="Your Profile"
+        description="Add your measurements and style preferences to help generate better-fitting and personalized outfit combinations"
+      />
 
       <form onSubmit={handleSubmit} className="profile-form">
         <div className="form-section">
-          <h2>Basic Measurements</h2>
+          <SectionHeader title="Basic Measurements" />
           <div className="profile-grid">
             <div className="form-group">
               <label htmlFor="height">Height</label>
@@ -120,7 +119,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
         </div>
 
         <div className="form-section">
-          <h2>Body Measurements</h2>
+          <SectionHeader title="Body Measurements" />
           <div className="profile-grid">
             <div className="form-group">
               <label htmlFor="waist">Waist</label>
@@ -229,7 +228,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
         </div>
 
         <div className="form-section">
-          <h2>Style Preferences</h2>
+          <SectionHeader title="Style Preferences" />
           
           <div className="form-group">
             <label htmlFor="brands">Favorite Brands</label>
@@ -263,13 +262,15 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
         {error && <div className="error-message">{error}</div>}
         {success && <div className="success-message">Profile updated successfully!</div>}
 
-        <button
+        <Button
           type="submit"
-          className="btn btn-primary save-btn"
+          variant="primary"
+          size="large"
           disabled={loading}
+          className="save-btn"
         >
           {loading ? 'Saving...' : 'Save Profile'}
-        </button>
+        </Button>
       </form>
     </div>
   );

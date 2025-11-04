@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './OutfitsPage.css';
 import { WardrobeItem } from '../App';
 import FeedbackModal from '../components/FeedbackModal';
+import { PageHeader, SectionHeader, Button } from '../design-system';
 
 interface OutfitsPageProps {
   apiUrl: string;
@@ -267,15 +268,13 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
 
   return (
     <div className="OutfitsPage">
-      <div className="page-header">
-        <h1>Outfits</h1>
-        <p className="page-description">
-          Generate personalized outfit combinations based on your wardrobe and style preferences
-        </p>
-      </div>
+      <PageHeader
+        title="Outfits"
+        description="Generate personalized outfit combinations based on your wardrobe and style preferences"
+      />
 
       <div className="generate-section">
-        <h2 className="section-heading">Outfit Generator</h2>
+        <SectionHeader title="Outfit Generator" />
         <div className="generate-form">
           <div className="form-group">
             <label htmlFor="prompt">Additional Context (Optional)</label>
@@ -311,17 +310,19 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
               </p>
             </div>
           ) : (
-            <button
-              className="btn btn-primary generate-btn"
+            <Button
+              variant="primary"
+              size="medium"
               onClick={handleGenerate}
               disabled={loading || (status?.remaining ?? 0) <= 0}
+              className="generate-btn"
             >
               {loading
                 ? 'Generating Outfits...'
                 : status?.remaining === 0
                 ? 'Daily Limit Reached'
                 : 'Generate 5 Outfits'}
-            </button>
+            </Button>
           )}
 
           {error && <div className="error-message">{error}</div>}
@@ -330,7 +331,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
 
       {generatedOutfits.length > 0 && (
         <div className="generated-outfits-section">
-          <h2>Generated Outfits ({generatedOutfits.length})</h2>
+          <SectionHeader title={`Generated Outfits (${generatedOutfits.length})`} />
           <div className="outfits-list">
             {generatedOutfits.map((outfit, index) => (
               <div key={index} className="outfit-card">
@@ -361,27 +362,33 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                   })}
                 </div>
                 <div className="outfit-actions">
-                  <button
-                    className="btn btn-secondary like-btn"
+                  <Button
+                    variant="secondary"
+                    size="small"
                     onClick={() => handleLikeDislike(outfit, index, 'like')}
                     disabled={savingOutfitId === index}
+                    className="like-btn"
                   >
                     ✓ Like
-                  </button>
-                  <button
-                    className="btn btn-secondary dislike-btn"
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="small"
                     onClick={() => handleLikeDislike(outfit, index, 'dislike')}
                     disabled={savingOutfitId === index}
+                    className="dislike-btn"
                   >
                     ✗ Dislike
-                  </button>
-                  <button
-                    className="btn btn-secondary save-outfit-btn"
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="small"
                     onClick={() => handleSaveOutfit(outfit, index)}
                     disabled={savingOutfitId === index}
+                    className="save-outfit-btn"
                   >
                     {savingOutfitId === index ? 'Saving...' : '💾 Save'}
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -403,7 +410,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
 
       {savedOutfits.length > 0 && (
         <div className="saved-outfits-section">
-          <h2>Saved Outfits ({savedOutfits.length})</h2>
+          <SectionHeader title={`Saved Outfits (${savedOutfits.length})`} />
           <div className="outfits-list">
             {savedOutfits.map((outfit) => (
               <div key={outfit.id} className="outfit-card saved">
@@ -441,12 +448,14 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                   <small>
                     Saved {new Date(outfit.createdAt).toLocaleDateString()}
                   </small>
-                  <button
-                    className="btn btn-small delete-outfit-btn"
+                  <Button
+                    variant="secondary"
+                    size="small"
                     onClick={() => handleDeleteSavedOutfit(outfit.id)}
+                    className="delete-outfit-btn"
                   >
                     🗑️ Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -465,7 +474,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
           
           {showFeedbackSection && (
             <div className="feedback-list">
-              <h2>Your Feedback</h2>
+              <SectionHeader title="Your Feedback" />
               <div className="feedback-items">
                 {feedback.map((fb) => (
                   <div key={fb.id} className={`feedback-item ${fb.type}`}>
@@ -476,12 +485,14 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                       <span className="feedback-date">
                         {new Date(fb.createdAt).toLocaleDateString()}
                       </span>
-                      <button
-                        className="btn btn-small delete-feedback-btn"
+                      <Button
+                        variant="secondary"
+                        size="small"
                         onClick={() => handleDeleteFeedback(fb.id)}
+                        className="delete-feedback-btn"
                       >
                         Delete
-                      </button>
+                      </Button>
                     </div>
                     <div className="feedback-outfit">
                       {fb.itemTitles.join(' + ')}

@@ -3,6 +3,7 @@ import './WardrobePage.css';
 import { WardrobeItem } from '../App';
 import ItemInput from '../components/ItemInput';
 import ItemList from '../components/ItemList';
+import { PageHeader } from '../design-system';
 
 interface WardrobePageProps {
   apiUrl: string;
@@ -49,12 +50,10 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
 
   return (
     <div className="WardrobePage">
-      <div className="page-header">
-        <h1>Your Wardrobe</h1>
-        <p className="page-description">
-          Manage your wardrobe items. Add, edit, or delete items organized by category.
-        </p>
-      </div>
+      <PageHeader
+        title="Your Wardrobe"
+        description="Manage your wardrobe items. Add, edit, or delete items organized by category."
+      />
 
       <ItemInput 
         onItemAdded={handleItemAdded} 

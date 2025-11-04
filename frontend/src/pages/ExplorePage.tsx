@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './ExplorePage.css';
 import { WardrobeItem } from '../App';
+import { PageHeader, Button, Text } from '../design-system';
 
 interface ExplorePageProps {
   apiUrl: string;
@@ -126,28 +127,25 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
 
   return (
     <div className="ExplorePage">
-      <div className="explore-header">
-        <div className="page-header">
-          <h1>Explore</h1>
-          <p className="page-description">
-            Discover items that complement your wardrobe based on your style preferences
-          </p>
-        </div>
-        <div className="header-actions">
-          {lastUpdate && (
-            <div className="last-update">
-              <small>Last updated: {formatDate(lastUpdate)}</small>
-            </div>
-          )}
-          <button
-            className="btn btn-primary refresh-btn"
-            onClick={handleRefresh}
-            disabled={loading}
-          >
-            {loading ? 'Generating...' : 'Refresh'}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Explore"
+        description="Discover items that complement your wardrobe based on your style preferences"
+      >
+        {lastUpdate && (
+          <div className="last-update">
+            <Text variant="caption">Last updated: {formatDate(lastUpdate)}</Text>
+          </div>
+        )}
+        <Button
+          variant="primary"
+          size="medium"
+          onClick={handleRefresh}
+          disabled={loading}
+          className="refresh-btn"
+        >
+          {loading ? 'Generating...' : 'Refresh'}
+        </Button>
+      </PageHeader>
 
       {error && <div className="error-message">{error}</div>}
 

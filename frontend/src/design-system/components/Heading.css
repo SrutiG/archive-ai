@@ -1,0 +1,47 @@
+@import '../tokens/colors.css';
+@import '../tokens/typography.css';
+@import '../tokens/spacing.css';
+
+.ds-heading {
+  font-family: var(--font-serif);
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-bold);
+  margin: 0;
+}
+
+.ds-heading--h1 {
+  font-size: var(--font-size-3xl);
+  letter-spacing: var(--letter-spacing-wide);
+  line-height: var(--line-height-tight);
+}
+
+.ds-heading--h2 {
+  font-size: var(--font-size-xl);
+  letter-spacing: var(--letter-spacing-normal);
+  line-height: var(--line-height-tight);
+}
+
+.ds-heading--h3 {
+  font-size: var(--font-size-lg);
+  letter-spacing: var(--letter-spacing-normal);
+  line-height: var(--line-height-tight);
+}
+
+.ds-heading--h4 {
+  font-size: var(--font-size-base);
+  letter-spacing: var(--letter-spacing-normal);
+  line-height: var(--line-height-normal);
+}
+
+.ds-heading--h5 {
+  font-size: var(--font-size-sm);
+  letter-spacing: var(--letter-spacing-wide);
+  line-height: var(--line-height-normal);
+}
+
+.ds-heading--h6 {
+  font-size: var(--font-size-xs);
+  letter-spacing: var(--letter-spacing-wide);
+  line-height: var(--line-height-normal);
+}
+

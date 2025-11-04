@@ -1,0 +1,37 @@
+@import '../tokens/colors.css';
+@import '../tokens/spacing.css';
+
+.ds-divider {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ds-divider--horizontal {
+  width: 100%;
+  height: var(--border-width-thin);
+  background: var(--color-border-primary);
+}
+
+.ds-divider--horizontal.ds-divider--primary {
+  background: var(--color-border-primary);
+}
+
+.ds-divider--horizontal.ds-divider--secondary {
+  background: var(--color-border-secondary);
+}
+
+.ds-divider--vertical {
+  width: var(--border-width-thin);
+  height: 100%;
+  background: var(--color-border-primary);
+}
+
+.ds-divider--vertical.ds-divider--primary {
+  background: var(--color-border-primary);
+}
+
+.ds-divider--vertical.ds-divider--secondary {
+  background: var(--color-border-secondary);
+}
+

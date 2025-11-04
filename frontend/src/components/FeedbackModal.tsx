@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import './FeedbackModal.css';
+import { Heading, Button } from '../design-system';
 
 interface FeedbackModalProps {
   isOpen: boolean;
@@ -35,7 +36,7 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
     <div className="modal-overlay" onClick={handleClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>{type === 'like' ? 'Like' : 'Dislike'} Outfit</h2>
+          <Heading level={2}>{type === 'like' ? 'Like' : 'Dislike'} Outfit</Heading>
           <button className="modal-close" onClick={handleClose}>×</button>
         </div>
         
@@ -62,12 +63,12 @@ const FeedbackModal: React.FC<FeedbackModalProps> = ({
             </div>
             
             <div className="modal-actions">
-              <button type="button" className="btn btn-secondary" onClick={handleClose}>
+              <Button type="button" variant="secondary" size="medium" onClick={handleClose}>
                 Cancel
-              </button>
-              <button type="submit" className="btn btn-primary">
+              </Button>
+              <Button type="submit" variant="primary" size="medium">
                 Submit {type === 'like' ? 'Like' : 'Dislike'}
-              </button>
+              </Button>
             </div>
           </form>
         </div>

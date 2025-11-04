@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import './ItemList.css';
 import { WardrobeItem } from '../App';
 import ItemEdit from './ItemEdit';
+import { Heading } from '../design-system';
 
 interface ItemListProps {
   items: WardrobeItem[];
@@ -79,7 +80,7 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
   return (
     <div className="ItemList">
       <div className="ItemList-header">
-        <h2>Your Wardrobe ({items.length} items)</h2>
+        <Heading level={2}>Your Wardrobe ({items.length} items)</Heading>
         <div className="view-toggle">
           <button
             className={viewMode === 'all' ? 'active' : ''}
@@ -138,9 +139,9 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
         <div className="items-by-category">
           {Object.entries(itemsByCategory).map(([category, categoryItems]) => (
             <div key={category} className="category-section">
-              <h3 className="category-title">
+              <Heading level={3} className="category-title">
                 {category} ({categoryItems.length})
-              </h3>
+              </Heading>
               <div className="items-grid">
                 {categoryItems.map((item) => (
                   <div key={item.id} className="item-card">

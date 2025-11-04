@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ItemInput.css';
+import { SectionHeader, Button } from '../design-system';
 
 interface ItemInputProps {
   onItemAdded: () => void;
@@ -289,7 +290,7 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
 
   return (
     <div className="ItemInput">
-      <h2>Add New Item</h2>
+      <SectionHeader title="Add New Item" />
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label htmlFor="title">Item Title *</label>
@@ -349,22 +350,24 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
           <div className="photo-options">
             {!isCameraOpen && (
               <>
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="medium"
                   onClick={openCamera}
-                  className="btn btn-secondary"
                   disabled={loading}
                 >
                   📷 Take Photo
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="medium"
                   onClick={() => fileInputRef.current?.click()}
-                  className="btn btn-secondary"
                   disabled={loading}
                 >
                   📁 Choose File
-                </button>
+                </Button>
               </>
             )}
             <input
@@ -380,20 +383,23 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
             <div className="camera-container">
               <video ref={videoRef} autoPlay playsInline className="camera-video" />
               <div className="camera-controls">
-                <button
+                <Button
                   type="button"
+                  variant="primary"
+                  size="medium"
                   onClick={capturePhoto}
-                  className="btn btn-primary capture-btn"
+                  className="capture-btn"
                 >
                   Capture
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="medium"
                   onClick={closeCamera}
-                  className="btn btn-secondary"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -401,8 +407,10 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
           {preview && !isCameraOpen && (
             <div className="preview-container">
               <img src={preview} alt="Preview" className="preview-image" />
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                size="small"
                 onClick={() => {
                   setPreview(null);
                   setPhoto(null);
@@ -410,23 +418,23 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
                     fileInputRef.current.value = '';
                   }
                 }}
-                className="btn btn-small"
               >
                 Remove
-              </button>
+              </Button>
             </div>
           )}
         </div>
 
         {error && <div className="error-message">{error}</div>}
 
-        <button
+        <Button
           type="submit"
-          className="btn btn-primary"
+          variant="primary"
+          size="medium"
           disabled={loading || !title.trim() || !category || !photo}
         >
           {loading ? 'Adding...' : 'Add Item'}
-        </button>
+        </Button>
       </form>
     </div>
   );

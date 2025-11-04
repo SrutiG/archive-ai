@@ -1,0 +1,34 @@
+@import '../tokens/colors.css';
+@import '../tokens/typography.css';
+@import '../tokens/spacing.css';
+
+.ds-page-header {
+  position: relative;
+  margin-bottom: var(--spacing-4);
+  padding-bottom: var(--spacing-4);
+  border-bottom: var(--border-width-thin) solid var(--color-border-primary);
+  width: 100%;
+}
+
+.ds-page-header__content {
+  width: 100%;
+}
+
+.ds-page-header__content .ds-heading--h1 {
+  margin-bottom: var(--spacing-2);
+}
+
+.ds-page-header__description {
+  margin-top: var(--spacing-2);
+}
+
+.ds-page-header__actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-4);
+}
+

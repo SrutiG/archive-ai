@@ -1,0 +1,66 @@
+@import '../tokens/colors.css';
+@import '../tokens/typography.css';
+@import '../tokens/spacing.css';
+
+.ds-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: var(--border-width-thin) solid var(--color-border-primary);
+  background: var(--color-black);
+  color: var(--color-white);
+  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-wide);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: var(--border-radius-none);
+  border: var(--border-width-thin) solid var(--color-black);
+}
+
+.ds-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Variants */
+.ds-button--primary {
+  background: var(--color-black);
+  color: var(--color-white);
+  border-color: var(--color-black);
+}
+
+.ds-button--primary:hover:not(:disabled) {
+  background: var(--color-white);
+  color: var(--color-black);
+}
+
+.ds-button--secondary {
+  background: var(--color-white);
+  color: var(--color-black);
+  border-color: var(--color-black);
+}
+
+.ds-button--secondary:hover:not(:disabled) {
+  background: var(--color-black);
+  color: var(--color-white);
+}
+
+/* Sizes */
+.ds-button--small {
+  padding: var(--spacing-2) var(--spacing-4);
+  font-size: var(--font-size-sm);
+}
+
+.ds-button--medium {
+  padding: var(--spacing-3) var(--spacing-6);
+  font-size: var(--font-size-sm);
+}
+
+.ds-button--large {
+  padding: var(--spacing-4) var(--spacing-8);
+  font-size: var(--font-size-base);
+}
+

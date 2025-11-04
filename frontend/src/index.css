@@ -1,22 +1,26 @@
+@import './design-system/tokens/colors.css';
+@import './design-system/tokens/typography.css';
+@import './design-system/tokens/spacing.css';
+
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #fff;
-  color: #000;
+  background: var(--color-background);
+  color: var(--color-text-primary);
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: var(--font-mono);
+  background: var(--color-background-alt);
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--border-radius-none);
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Playfair Display', serif; /* Serif font for headings */
-  color: #000;
+  font-family: var(--font-serif);
+  color: var(--color-text-primary);
 }
 
 /* Page Header Design System */
