@@ -29,6 +29,12 @@ const Navigation: React.FC = () => {
         >
           Outfits
         </Link>
+        <Link 
+          to="/explore" 
+          className={location.pathname === '/explore' ? 'active' : ''}
+        >
+          Explore
+        </Link>
       </div>
     </nav>
   );

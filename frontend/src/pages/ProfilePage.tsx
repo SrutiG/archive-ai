@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './ProfilePage.css';
 import { UserProfile } from '../App';
+import BrandAutocomplete from '../components/BrandAutocomplete';
 
 interface ProfilePageProps {
   apiUrl: string;
@@ -227,6 +228,19 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
 
         <div className="form-section">
           <h2>Style Preferences</h2>
+          
+          <div className="form-group">
+            <label htmlFor="brands">Favorite Brands</label>
+            <BrandAutocomplete
+              selectedBrands={profile.brands || []}
+              onBrandsChange={(brands) => setProfile({ ...profile, brands })}
+              disabled={loading}
+            />
+            <small>
+              Add brands you love to help generate outfit suggestions that match your style
+            </small>
+          </div>
+
           <div className="form-group">
             <label htmlFor="stylePreferences">Personal Style Description</label>
             <textarea

@@ -5,8 +5,8 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
-import { generateOutfits } from './llmService';
-import { loadWardrobeData, saveItems, saveOutfitClicks, saveUserProfile, saveOutfits, saveFeedback } from './storage';
+import { generateOutfits, generateExploreSuggestions } from './llmService';
+import { loadWardrobeData, saveItems, saveOutfitClicks, saveUserProfile, saveOutfits, saveFeedback, saveExploreSuggestions } from './storage';
 
 dotenv.config();
 
@@ -94,6 +94,7 @@ export interface UserProfile {
   heightUnit?: 'inches' | 'cm';
   weightUnit?: 'lbs' | 'kg';
   stylePreferences?: string; // Personal style preferences description
+  brands?: string[]; // Array of favorite brands
   // Additional measurements
   waist?: number;
   chest?: number;
@@ -122,6 +123,19 @@ export interface OutfitFeedback {
   prompt?: string; // The prompt used when this outfit was generated
 }
 
+// Explore suggestion interface
+export interface ExploreSuggestion {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  brand?: string; // Brand or store name
+  link?: string; // URL to find/buy the item
+  pairsWellWith: string[]; // Array of existing wardrobe item titles
+  imageUrl?: string; // URL to product image (from LLM or generated)
+  createdAt: string;
+}
+
 // Load data from storage on startup
 const initialData = loadWardrobeData();
 let wardrobeItems: WardrobeItem[] = initialData.items;
@@ -129,6 +143,8 @@ let outfitGenerationClicks = initialData.outfitGenerationClicks;
 let userProfile: UserProfile = initialData.userProfile || {};
 let savedOutfits: SavedOutfit[] = initialData.savedOutfits || [];
 let outfitFeedback: OutfitFeedback[] = initialData.outfitFeedback || [];
+let exploreSuggestions: ExploreSuggestion[] = initialData.exploreSuggestions || [];
+let lastExploreUpdate: string = initialData.lastExploreUpdate || '';
 const MAX_OUTFIT_CLICKS_PER_DAY = 10;
 let lastClickResetDate = initialData.lastClickResetDate;
 
@@ -163,6 +179,8 @@ app.post('/api/reload', (req, res) => {
     userProfile = freshData.userProfile || {};
     savedOutfits = freshData.savedOutfits || [];
     outfitFeedback = freshData.outfitFeedback || [];
+    exploreSuggestions = freshData.exploreSuggestions || [];
+    lastExploreUpdate = freshData.lastExploreUpdate || '';
     
     console.log(`Reloaded ${wardrobeItems.length} items from storage`);
     res.json({ 
@@ -493,7 +511,7 @@ app.get('/api/user/profile', (req, res) => {
 app.post('/api/user/profile', (req, res) => {
   try {
     const { 
-      height, weight, heightUnit, weightUnit, stylePreferences,
+      height, weight, heightUnit, weightUnit, stylePreferences, brands,
       waist, chest, hips, inseam, shoeSize, measurementsUnit
     } = req.body;
     
@@ -503,6 +521,7 @@ app.post('/api/user/profile', (req, res) => {
       heightUnit: heightUnit || 'inches',
       weightUnit: weightUnit || 'lbs',
       stylePreferences: stylePreferences || undefined,
+      brands: brands && Array.isArray(brands) ? brands : undefined,
       waist: waist ? Number(waist) : undefined,
       chest: chest ? Number(chest) : undefined,
       hips: hips ? Number(hips) : undefined,
@@ -658,11 +677,150 @@ app.delete('/api/outfits/feedback/:id', (req, res) => {
   }
 });
 
+// Get explore suggestions
+app.get('/api/explore/suggestions', (req, res) => {
+  const today = new Date().toDateString();
+  const shouldUpdate = !lastExploreUpdate || lastExploreUpdate !== today;
+  
+  console.log(`Explore suggestions requested. Last update: ${lastExploreUpdate || 'never'}, Today: ${today}`);
+  console.log(`Should update: ${shouldUpdate}`);
+  
+  res.json({
+    suggestions: exploreSuggestions,
+    lastUpdate: lastExploreUpdate,
+    shouldUpdate
+  });
+});
+
+// Generate explore suggestions
+app.post('/api/explore/generate', async (req, res) => {
+  try {
+    const forceRefresh = req.query.force === 'true';
+    console.log(`Generating explore suggestions... (force: ${forceRefresh})`);
+    
+    // Check if already updated today (unless force refresh)
+    const today = new Date().toDateString();
+    if (!forceRefresh && lastExploreUpdate === today && exploreSuggestions.length > 0) {
+      console.log('Suggestions already generated today');
+      return res.json({
+        suggestions: exploreSuggestions,
+        lastUpdate: lastExploreUpdate,
+        message: 'Suggestions already generated today'
+      });
+    }
+
+    // Generate suggestions using LLM
+    const suggestions = await generateExploreSuggestions(
+      wardrobeItems,
+      userProfile,
+      outfitFeedback
+    );
+
+    // Ensure uploads directory exists
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      console.log('Created uploads directory');
+    }
+
+    // Create ExploreSuggestion objects with IDs, images, and product links
+    const exploreSuggestionsWithIds: ExploreSuggestion[] = await Promise.all(
+      suggestions.map(async (suggestion) => {
+        let imageUrl: string | undefined = suggestion.imageUrl;
+        let productLink: string | undefined = suggestion.link;
+        
+        // Build search query for product search
+        const searchQuery = suggestion.brand 
+          ? `${suggestion.brand} ${suggestion.title}`
+          : `${suggestion.title} ${suggestion.category}`;
+        
+        // If LLM provided an imageUrl, use it directly
+        if (imageUrl && imageUrl.startsWith('http')) {
+          console.log(`Using LLM-provided image URL for "${suggestion.title}": ${imageUrl}`);
+        } else {
+          // Use Pexels API for high-quality fashion images
+          const pexelsApiKey = process.env.PEXELS_API_KEY;
+          if (pexelsApiKey) {
+            try {
+              const pexelsResponse = await fetch(
+                `https://api.pexels.com/v1/search?query=${encodeURIComponent(searchQuery + ' fashion')}&per_page=1&orientation=square`,
+                {
+                  headers: {
+                    'Authorization': pexelsApiKey
+                  }
+                }
+              );
+              
+              if (pexelsResponse.ok) {
+                const pexelsData = await pexelsResponse.json();
+                if (pexelsData.photos && pexelsData.photos.length > 0) {
+                  imageUrl = pexelsData.photos[0].src.medium || pexelsData.photos[0].src.large;
+                  console.log(`✅ Found Pexels image for "${suggestion.title}"`);
+                } else {
+                  console.log(`⚠️  No Pexels photos found for "${suggestion.title}"`);
+                }
+              } else {
+                const errorText = await pexelsResponse.text();
+                console.warn(`⚠️  Pexels API error for "${suggestion.title}": ${pexelsResponse.status} ${errorText}`);
+              }
+            } catch (pexelsError) {
+              console.warn(`⚠️  Pexels API exception for "${suggestion.title}":`, pexelsError instanceof Error ? pexelsError.message : pexelsError);
+            }
+          } else {
+            console.log(`⚠️  PEXELS_API_KEY not set, skipping Pexels API for "${suggestion.title}"`);
+          }
+          
+          // Fallback to Unsplash if Pexels fails or no key
+          if (!imageUrl) {
+            imageUrl = `https://source.unsplash.com/400x400/?${encodeURIComponent(searchQuery + ' fashion')}`;
+            console.log(`↩️  Using Unsplash fallback for "${suggestion.title}"`);
+          }
+        }
+        
+        // Generate Google Shopping link if no link provided
+        if (!productLink || !productLink.startsWith('http')) {
+          productLink = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(searchQuery)}`;
+          console.log(`Generated Google Shopping link for "${suggestion.title}"`);
+        }
+
+        return {
+          id: uuidv4(),
+          title: suggestion.title,
+          category: suggestion.category,
+          description: suggestion.description,
+          brand: suggestion.brand,
+          link: productLink,
+          pairsWellWith: suggestion.pairsWellWith,
+          imageUrl: imageUrl,
+          createdAt: new Date().toISOString()
+        };
+      })
+    );
+
+    exploreSuggestions = exploreSuggestionsWithIds;
+    lastExploreUpdate = today;
+    saveExploreSuggestions(exploreSuggestions, lastExploreUpdate);
+    
+    console.log(`Generated ${exploreSuggestions.length} explore suggestions`);
+    res.json({
+      suggestions: exploreSuggestions,
+      lastUpdate: lastExploreUpdate
+    });
+  } catch (error) {
+    console.error('Error generating explore suggestions:', error);
+    if (error instanceof Error) {
+      console.error('Error details:', error.message);
+      console.error('Stack:', error.stack);
+    }
+    res.status(500).json({ error: 'Failed to generate explore suggestions' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log('='.repeat(50));
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📁 Uploads directory: ${uploadsDir}`);
   console.log(`🎯 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log(`📸 Pexels API Key: ${process.env.PEXELS_API_KEY ? '✅ Set' : '⚠️  Not set (will use Unsplash fallback)'}`);
   console.log('='.repeat(50));
 });

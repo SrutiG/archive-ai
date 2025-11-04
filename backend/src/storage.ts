@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { WardrobeItem, UserProfile, SavedOutfit, OutfitFeedback } from './index';
+import { WardrobeItem, UserProfile, SavedOutfit, OutfitFeedback, ExploreSuggestion } from './index';
 
 const DATA_FILE = path.join(__dirname, '../data/wardrobe.json');
 const DATA_DIR = path.join(__dirname, '../data');
@@ -12,6 +12,8 @@ export interface WardrobeData {
   userProfile?: UserProfile;
   savedOutfits?: SavedOutfit[];
   outfitFeedback?: OutfitFeedback[];
+  exploreSuggestions?: ExploreSuggestion[];
+  lastExploreUpdate?: string;
 }
 
 export interface SavedOutfit {
@@ -36,7 +38,9 @@ function getDefaultData(): WardrobeData {
     lastClickResetDate: new Date().toDateString(),
     userProfile: {},
     savedOutfits: [],
-    outfitFeedback: []
+    outfitFeedback: [],
+    exploreSuggestions: [],
+    lastExploreUpdate: ''
   };
 }
 
@@ -121,6 +125,13 @@ export function saveOutfits(outfits: SavedOutfit[]): void {
 export function saveFeedback(feedback: OutfitFeedback[]): void {
   const currentData = loadWardrobeData();
   currentData.outfitFeedback = feedback;
+  saveWardrobeData(currentData);
+}
+
+export function saveExploreSuggestions(suggestions: ExploreSuggestion[], updateDate: string): void {
+  const currentData = loadWardrobeData();
+  currentData.exploreSuggestions = suggestions;
+  currentData.lastExploreUpdate = updateDate;
   saveWardrobeData(currentData);
 }
 

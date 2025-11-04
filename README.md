@@ -45,8 +45,19 @@ Create a `.env` file in the `backend` directory:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
+PEXELS_API_KEY=your_pexels_api_key_here
 PORT=3001
 ```
+
+### Getting Pexels API Key (Optional but Recommended)
+
+1. Go to [Pexels API](https://www.pexels.com/api/)
+2. Sign up for a free account
+3. Navigate to the API section
+4. Copy your API key
+5. Add it to the `.env` file as `PEXELS_API_KEY`
+
+**Note**: Pexels API is free and provides 200 requests per hour. If you don't provide a key, the app will fall back to Unsplash Source API (which may have limited functionality).
 
 Start the backend server:
 

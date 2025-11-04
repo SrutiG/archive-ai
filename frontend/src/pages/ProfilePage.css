@@ -15,7 +15,8 @@
 .page-description {
   color: #666;
   font-size: 0.875rem;
-  margin-bottom: 3rem;
+  margin-bottom: 4rem;
+  padding-bottom: 1rem;
   font-weight: 300;
   letter-spacing: 0.02em;
 }

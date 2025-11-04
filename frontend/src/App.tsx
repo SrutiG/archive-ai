@@ -5,6 +5,7 @@ import Navigation from './components/Navigation';
 import ProfilePage from './pages/ProfilePage';
 import WardrobePage from './pages/WardrobePage';
 import OutfitsPage from './pages/OutfitsPage';
+import ExplorePage from './pages/ExplorePage';
 
 export interface WardrobeItem {
   id: string;
@@ -30,6 +31,7 @@ export interface UserProfile {
   heightUnit?: 'inches' | 'cm';
   weightUnit?: 'lbs' | 'kg';
   stylePreferences?: string;
+  brands?: string[]; // Array of favorite brands
   waist?: number;
   chest?: number;
   hips?: number;
@@ -65,6 +67,7 @@ function App() {
             <Route path="/profile" element={<ProfilePage apiUrl={API_BASE_URL} />} />
             <Route path="/wardrobe" element={<WardrobePage apiUrl={API_BASE_URL} />} />
             <Route path="/outfits" element={<OutfitsPage apiUrl={API_BASE_URL} />} />
+            <Route path="/explore" element={<ExplorePage apiUrl={API_BASE_URL} />} />
           </Routes>
         </main>
       </div>
