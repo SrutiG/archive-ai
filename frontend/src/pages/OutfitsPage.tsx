@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './OutfitsPage.css';
 import { WardrobeItem } from '../App';
 import FeedbackModal from '../components/FeedbackModal';
+import ItemAutocomplete from '../components/ItemAutocomplete';
 import { PageHeader, SectionHeader, Button } from '../design-system';
 
 interface OutfitsPageProps {
@@ -50,6 +51,8 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   const [feedbackModalOutfit, setFeedbackModalOutfit] = useState<string[]>([]);
   const [feedbackModalIndex, setFeedbackModalIndex] = useState<number | null>(null);
   const [showFeedbackSection, setShowFeedbackSection] = useState(false);
+  const [likedOutfitIndices, setLikedOutfitIndices] = useState<Set<number>>(new Set());
+  const [selectedItems, setSelectedItems] = useState<WardrobeItem[]>([]);
 
   useEffect(() => {
     fetchItems();
@@ -103,7 +106,10 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt: prompt.trim() || undefined }),
+        body: JSON.stringify({ 
+          prompt: prompt.trim() || undefined,
+          selectedItemIds: selectedItems.map(item => item.id)
+        }),
       });
 
       const data = await response.json();
@@ -120,6 +126,8 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
       }));
 
       setGeneratedOutfits(outfits);
+      setLikedOutfitIndices(new Set()); // Reset liked outfits when generating new ones
+      setSelectedItems([]); // Clear selected items after generation
       setStatus({
         clicksUsed: data.clicksUsed || 0,
         maxClicks: data.maxClicks || 10,
@@ -156,6 +164,19 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
       await fetchSavedOutfits();
       // Remove from generated outfits
       setGeneratedOutfits(prev => prev.filter((_, i) => i !== index));
+      // Remove from liked indices if it was liked, and update indices for items after
+      setLikedOutfitIndices(prev => {
+        const newSet = new Set<number>();
+        prev.forEach(idx => {
+          if (idx < index) {
+            newSet.add(idx);
+          } else if (idx > index) {
+            newSet.add(idx - 1);
+          }
+          // If idx === index, don't add it (it's removed)
+        });
+        return newSet;
+      });
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to save outfit');
     } finally {
@@ -204,11 +225,29 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
 
       await fetchFeedback();
       setShowFeedbackModal(false);
+      
+      if (feedbackModalType === 'like') {
+        // Mark outfit as liked instead of removing it
+        setLikedOutfitIndices(prev => new Set(prev).add(feedbackModalIndex));
+      } else {
+        // Remove disliked outfits from the list
+        setGeneratedOutfits(prev => prev.filter((_, i) => i !== feedbackModalIndex));
+        // Update liked indices to account for removed item
+        setLikedOutfitIndices(prev => {
+          const newSet = new Set<number>();
+          prev.forEach(idx => {
+            if (idx < feedbackModalIndex) {
+              newSet.add(idx);
+            } else if (idx > feedbackModalIndex) {
+              newSet.add(idx - 1);
+            }
+          });
+          return newSet;
+        });
+      }
+      
       setFeedbackModalIndex(null);
       setFeedbackModalOutfit([]);
-      
-      // Remove the outfit from generated list after feedback
-      setGeneratedOutfits(prev => prev.filter((_, i) => i !== feedbackModalIndex));
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to save feedback');
     }
@@ -277,6 +316,19 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
         <SectionHeader title="Outfit Generator" />
         <div className="generate-form">
           <div className="form-group">
+            <label htmlFor="selectedItems">Build Outfit Around Specific Items (Optional, max 3)</label>
+            <ItemAutocomplete
+              items={items}
+              selectedItems={selectedItems}
+              onItemsChange={setSelectedItems}
+              maxItems={3}
+              disabled={loading}
+              apiUrl={apiUrl}
+            />
+            <small>Select up to 3 items to build outfits around. All item details (description, measurements) will be included in the generation context.</small>
+          </div>
+
+          <div className="form-group">
             <label htmlFor="prompt">Additional Context (Optional)</label>
             <textarea
               id="prompt"
@@ -333,8 +385,16 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
         <div className="generated-outfits-section">
           <SectionHeader title={`Generated Outfits (${generatedOutfits.length})`} />
           <div className="outfits-list">
-            {generatedOutfits.map((outfit, index) => (
-              <div key={index} className="outfit-card">
+            {generatedOutfits.map((outfit, index) => {
+              const isLiked = likedOutfitIndices.has(index);
+              return (
+              <div key={index} className={`outfit-card ${isLiked ? 'liked' : ''}`}>
+                {isLiked && (
+                  <div className="liked-indicator">
+                    <span className="liked-icon">✓</span>
+                    <span className="liked-text">Liked</span>
+                  </div>
+                )}
                 <div className="outfit-number">Outfit {index + 1}</div>
                 <div className="outfit-items">
                   {(outfit.itemTitles || []).map((itemTitle: string, itemIndex: number) => {
@@ -366,10 +426,10 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                     variant="secondary"
                     size="small"
                     onClick={() => handleLikeDislike(outfit, index, 'like')}
-                    disabled={savingOutfitId === index}
+                    disabled={savingOutfitId === index || isLiked}
                     className="like-btn"
                   >
-                    ✓ Like
+                    {isLiked ? '✓ Liked' : '✓ Like'}
                   </Button>
                   <Button
                     variant="secondary"
@@ -391,7 +451,8 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                   </Button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
       )}

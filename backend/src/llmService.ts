@@ -118,7 +118,8 @@ export async function generateOutfits(
   itemsByCategory: Record<string, WardrobeItem[]>,
   userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[] },
   prompt?: string,
-  feedback?: OutfitFeedback[]
+  feedback?: OutfitFeedback[],
+  selectedItems?: WardrobeItem[]
 ): Promise<string[][]> {
   try {
     console.log('[LLM] Starting outfit generation...');
@@ -166,6 +167,33 @@ export async function generateOutfits(
       if (contextParts.length > 0) {
         userContext = `User profile: ${contextParts.join('. ')}. `;
       }
+    }
+
+    // Add selected items context if provided
+    let selectedItemsContext = '';
+    if (selectedItems && selectedItems.length > 0) {
+      const selectedItemsDesc = selectedItems.map(item => {
+        let desc = item.title;
+        if (item.category) {
+          desc += ` (Category: ${item.category})`;
+        }
+        if (item.description) {
+          desc += ` - Description: ${item.description}`;
+        }
+        if (item.measurements) {
+          const measurementsStr = Object.entries(item.measurements)
+            .filter(([_, v]) => v !== undefined && v !== null)
+            .map(([k, v]) => `${k}: ${v}`)
+            .join(', ');
+          if (measurementsStr) {
+            desc += ` - Measurements: ${measurementsStr}`;
+          }
+        }
+        return desc;
+      }).join('\n');
+      const selectedItemTitles = selectedItems.map(item => item.title).join(', ');
+      selectedItemsContext = `CRITICAL REQUIREMENT: The user has selected these specific items that MUST be included in EVERY single generated outfit: ${selectedItemTitles}. \n\nEach of the 5 generated outfits MUST include ALL of these selected items. Do not generate any outfit without these items. Here are the selected items with full details:\n${selectedItemsDesc}\n\nGenerate 5 different outfit combinations, each one MUST include all the selected items listed above. Create variety by pairing them with different complementary pieces from the wardrobe. `;
+      console.log(`[LLM] Selected items context: ${selectedItems.length} items`);
     }
 
     // Add prompt context if provided
@@ -227,7 +255,7 @@ export async function generateOutfits(
         },
         {
           role: 'user',
-          content: `${userContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of arrays with item titles. Generate exactly 5 outfit combinations.`
+          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the 5 generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of arrays with item titles. Generate exactly 5 outfit combinations, each containing all selected items.`
         }
       ],
       max_tokens: 500,

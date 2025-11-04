@@ -338,10 +338,20 @@ app.post('/api/outfits/generate', async (req, res) => {
       });
     }
 
-    // Get optional prompt from request body
-    const { prompt } = req.body;
+    // Get optional prompt and selected item IDs from request body
+    const { prompt, selectedItemIds } = req.body;
     if (prompt) {
       console.log(`Generation prompt: ${prompt}`);
+    }
+    
+    // Get selected items if provided
+    let selectedItems: WardrobeItem[] = [];
+    if (selectedItemIds && Array.isArray(selectedItemIds) && selectedItemIds.length > 0) {
+      selectedItems = wardrobeItems.filter(item => selectedItemIds.includes(item.id));
+      console.log(`Selected items for outfit generation: ${selectedItems.length} items`);
+      selectedItems.forEach(item => {
+        console.log(`  - ${item.title} (${item.category})`);
+      });
     }
 
     // Generate outfits using LLM with user profile and item descriptions
@@ -350,7 +360,7 @@ app.post('/api/outfits/generate', async (req, res) => {
     if (userProfile.stylePreferences) {
       console.log(`Style preferences: ${userProfile.stylePreferences.substring(0, 100)}...`);
     }
-    const outfits = await generateOutfits(itemsByCategory, userProfile, prompt, outfitFeedback);
+    const outfits = await generateOutfits(itemsByCategory, userProfile, prompt, outfitFeedback, selectedItems);
     console.log(`Generated ${outfits.length} outfit combinations`);
     
     outfitGenerationClicks++;
