@@ -72,6 +72,8 @@
   overflow: hidden;
   transition: all 0.2s;
   background: #fff;
+  display: flex;
+  flex-direction: column;
 }
 
 .item-card:hover {
@@ -112,6 +114,9 @@
 
 .item-info {
   padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .item-info h3 {
@@ -135,11 +140,15 @@
 .item-actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 1rem;
 }
 
 .edit-btn,
 .delete-btn {
   flex: 1;
+  min-width: 0;
   padding: 0.75rem;
   cursor: pointer;
   font-size: 0.75rem;
@@ -148,6 +157,7 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .edit-btn {
@@ -212,5 +222,16 @@
   .ItemList-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+  
+  /* Stack buttons when card width is narrow enough that buttons would wrap */
+  .item-actions {
+    flex-direction: column;
+  }
+  
+  .edit-btn,
+  .delete-btn {
+    width: 100%;
+    flex: none;
   }
 }

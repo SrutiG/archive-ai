@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ItemInput.css';
 import { SectionHeader, Button } from '../design-system';
+import { getMeasurementFields, Measurements as MeasurementsType } from '../utils/measurementFields';
+import { useCamera } from '../hooks/useCamera';
 
 interface ItemInputProps {
   onItemAdded: () => void;
@@ -9,15 +11,7 @@ interface ItemInputProps {
   apiUrl: string;
 }
 
-interface Measurements {
-  size?: string;
-  waist?: number;
-  inseam?: number;
-  chest?: number;
-  length?: number;
-  shoeSize?: string;
-  [key: string]: string | number | undefined;
-}
+type Measurements = MeasurementsType;
 
 const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading, apiUrl }) => {
   const [title, setTitle] = useState('');
@@ -29,9 +23,26 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
   const [error, setError] = useState<string | null>(null);
   const [measurements, setMeasurements] = useState<Measurements>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  
+  const {
+    isCameraOpen,
+    isVideoReady,
+    countdown,
+    videoRef,
+    openCamera,
+    closeCamera,
+    startCapture,
+    handleVideoReady,
+    error: cameraError,
+    setError: setCameraError
+  } = useCamera();
+  
+  // Merge camera errors with component errors
+  useEffect(() => {
+    if (cameraError) {
+      setError(cameraError);
+    }
+  }, [cameraError]);
 
   // Fetch categories on mount
   useEffect(() => {
@@ -54,48 +65,13 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
     }
   };
 
-  const openCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' }
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setIsCameraOpen(true);
-      }
-    } catch (err) {
-      console.error('Error accessing camera:', err);
-      setError('Could not access camera. Please check permissions.');
-    }
-  };
-
-  const closeCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    setIsCameraOpen(false);
-  };
-
-  const capturePhoto = () => {
-    if (videoRef.current) {
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            const file = new File([blob], 'photo.jpg', { type: 'image/jpeg' });
-            setPhoto(file);
-            setPreview(canvas.toDataURL());
-            closeCamera();
-          }
-        }, 'image/jpeg', 0.8);
-      }
-    }
+  const handleCapturePhoto = () => {
+    startCapture((file: File, dataUrl: string) => {
+      setPhoto(file);
+      setPreview(dataUrl);
+      setError(null);
+      closeCamera();
+    });
   };
 
   const updateMeasurement = (key: string, value: string | number) => {
@@ -112,114 +88,6 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
     });
   };
 
-  const getMeasurementFields = () => {
-    const fields: JSX.Element[] = [];
-    
-    // Common fields
-    fields.push(
-      <div key="size" className="measurement-field">
-        <label>Size (e.g., S, M, L, XL)</label>
-        <input
-          type="text"
-          value={measurements.size || ''}
-          onChange={(e) => updateMeasurement('size', e.target.value)}
-          placeholder="S, M, L, XL..."
-          disabled={loading}
-        />
-      </div>
-    );
-
-    // Category-specific fields
-    if (['Tops', 'Outerwear'].includes(category)) {
-      fields.push(
-        <div key="chest" className="measurement-field">
-          <label>Chest (inches)</label>
-          <input
-            type="number"
-            step="0.5"
-            value={measurements.chest || ''}
-            onChange={(e) => updateMeasurement('chest', e.target.value)}
-            placeholder="38"
-            disabled={loading}
-          />
-        </div>
-      );
-      fields.push(
-        <div key="length" className="measurement-field">
-          <label>Length (inches)</label>
-          <input
-            type="number"
-            step="0.5"
-            value={measurements.length || ''}
-            onChange={(e) => updateMeasurement('length', e.target.value)}
-            placeholder="28"
-            disabled={loading}
-          />
-        </div>
-      );
-    }
-
-    if (['Bottoms', 'Dresses'].includes(category)) {
-      fields.push(
-        <div key="waist" className="measurement-field">
-          <label>Waist (inches)</label>
-          <input
-            type="number"
-            step="0.5"
-            value={measurements.waist || ''}
-            onChange={(e) => updateMeasurement('waist', e.target.value)}
-            placeholder="32"
-            disabled={loading}
-          />
-        </div>
-      );
-      if (category === 'Bottoms') {
-        fields.push(
-          <div key="inseam" className="measurement-field">
-            <label>Inseam (inches)</label>
-            <input
-              type="number"
-              step="0.5"
-              value={measurements.inseam || ''}
-              onChange={(e) => updateMeasurement('inseam', e.target.value)}
-              placeholder="32"
-              disabled={loading}
-            />
-          </div>
-        );
-      }
-      fields.push(
-        <div key="length" className="measurement-field">
-          <label>Length (inches)</label>
-          <input
-            type="number"
-            step="0.5"
-            value={measurements.length || ''}
-            onChange={(e) => updateMeasurement('length', e.target.value)}
-            placeholder="28"
-            disabled={loading}
-          />
-        </div>
-      );
-    }
-
-    if (category === 'Shoes') {
-      fields.push(
-        <div key="shoeSize" className="measurement-field">
-          <label>Shoe Size (e.g., 9, 10.5, 42 EU)</label>
-          <input
-            type="text"
-            value={measurements.shoeSize || ''}
-            onChange={(e) => updateMeasurement('shoeSize', e.target.value)}
-            placeholder="9 or 42 EU"
-            disabled={loading}
-          />
-        </div>
-      );
-    }
-
-    return fields;
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -340,7 +208,14 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
           <div className="form-group">
             <label>Measurements (Optional)</label>
             <div className="measurements-grid">
-              {getMeasurementFields()}
+              {getMeasurementFields({
+                category,
+                measurements,
+                updateMeasurement,
+                loading
+              }).map((field, index) => (
+                <React.Fragment key={index}>{field}</React.Fragment>
+              ))}
             </div>
           </div>
         )}
@@ -381,22 +256,35 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
 
           {isCameraOpen && (
             <div className="camera-container">
-              <video ref={videoRef} autoPlay playsInline className="camera-video" />
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                className="camera-video"
+                onLoadedMetadata={handleVideoReady}
+              />
+              {countdown !== null && (
+                <div className="countdown-overlay">
+                  <div className="countdown-number">{countdown}</div>
+                </div>
+              )}
               <div className="camera-controls">
                 <Button
                   type="button"
                   variant="primary"
                   size="medium"
-                  onClick={capturePhoto}
+                  onClick={handleCapturePhoto}
                   className="capture-btn"
+                  disabled={!isVideoReady || countdown !== null}
                 >
-                  Capture
+                  {countdown !== null ? `Capturing in ${countdown}...` : isVideoReady ? 'Capture' : 'Loading...'}
                 </Button>
                 <Button
                   type="button"
                   variant="secondary"
                   size="medium"
                   onClick={closeCamera}
+                  disabled={countdown !== null}
                 >
                   Cancel
                 </Button>

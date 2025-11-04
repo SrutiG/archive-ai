@@ -3,6 +3,7 @@ import './ItemList.css';
 import { WardrobeItem } from '../App';
 import ItemEdit from './ItemEdit';
 import { Heading } from '../design-system';
+import { getItemImageUrl, getPlaceholderImage } from '../utils/placeholderImages';
 
 interface ItemListProps {
   items: WardrobeItem[];
@@ -103,11 +104,11 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
             <div key={item.id} className="item-card">
               <div className="item-image-container">
                 <img
-                  src={`${apiUrl}${item.imageUrl}`}
+                  src={getItemImageUrl(item, apiUrl)}
                   alt={item.title}
                   className="item-image"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200';
+                    (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
                   }}
                 />
                 <span className="item-category">{item.category}</span>
@@ -147,11 +148,11 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
                   <div key={item.id} className="item-card">
                     <div className="item-image-container">
                       <img
-                        src={`${apiUrl}${item.imageUrl}`}
+                        src={getItemImageUrl(item, apiUrl)}
                         alt={item.title}
                         className="item-image"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = 'https://via.placeholder.com/200';
+                          (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
                         }}
                       />
                     </div>

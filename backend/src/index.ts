@@ -71,7 +71,7 @@ const upload = multer({
 export interface WardrobeItem {
   id: string;
   title: string;
-  imageUrl: string;
+  imageUrl?: string; // Optional - can use placeholder images if not provided
   category: string;
   description?: string; // Extended description for outfit generation
   measurements?: {
@@ -427,11 +427,13 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
     // Handle new photo upload if provided
     let imageUrl = existingItem.imageUrl;
     if (req.file) {
-      // Delete old image file
-      const oldFilePath = path.join(__dirname, '../uploads', path.basename(existingItem.imageUrl));
-      if (fs.existsSync(oldFilePath)) {
-        fs.unlinkSync(oldFilePath);
-        console.log(`Deleted old file: ${oldFilePath}`);
+      // Delete old image file if it exists
+      if (existingItem.imageUrl) {
+        const oldFilePath = path.join(__dirname, '../uploads', path.basename(existingItem.imageUrl));
+        if (fs.existsSync(oldFilePath)) {
+          fs.unlinkSync(oldFilePath);
+          console.log(`Deleted old file: ${oldFilePath}`);
+        }
       }
       // Use new image
       imageUrl = `/uploads/${req.file.filename}`;
@@ -493,13 +495,17 @@ app.delete('/api/items/:id', (req, res) => {
   const item = wardrobeItems[itemIndex];
   console.log(`Deleting item: "${item.title}" (${item.category})`);
   
-  // Delete the file
-  const filePath = path.join(__dirname, '../uploads', path.basename(item.imageUrl));
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-    console.log(`Deleted file: ${filePath}`);
+  // Delete the file if it exists
+  if (item.imageUrl) {
+    const filePath = path.join(__dirname, '../uploads', path.basename(item.imageUrl));
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`Deleted file: ${filePath}`);
+    } else {
+      console.log(`File not found: ${filePath}`);
+    }
   } else {
-    console.log(`File not found: ${filePath}`);
+    console.log('No image file to delete (item has no imageUrl)');
   }
 
   wardrobeItems.splice(itemIndex, 1);

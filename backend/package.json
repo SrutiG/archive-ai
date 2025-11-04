@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "clear-data": "ts-node src/scripts/clearData.ts",
-    "seed-data": "ts-node src/scripts/seedData.ts"
+    "seed-data": "ts-node src/scripts/seedData.ts",
+    "remove-item-images": "ts-node src/scripts/removeItemImages.ts"
   },
   "keywords": [],
   "author": "",

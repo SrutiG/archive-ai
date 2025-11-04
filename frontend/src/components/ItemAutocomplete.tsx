@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { WardrobeItem } from '../App';
 import './ItemAutocomplete.css';
+import { getItemImageUrl, getPlaceholderImage } from '../utils/placeholderImages';
 
 interface ItemAutocompleteProps {
   items: WardrobeItem[];
@@ -43,8 +44,8 @@ const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
     }
     
     setFilteredItems(filtered);
-    // Show suggestions when there are items and can add more
-    setShowSuggestions(filtered.length > 0 && canAddMore);
+    // Only show suggestions if input is focused and there are items available
+    // Don't automatically show suggestions on mount or when inputValue changes
   }, [inputValue, selectedItems, items, canAddMore, maxItems]);
 
   useEffect(() => {
@@ -61,7 +62,25 @@ const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
   }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e.target.value);
+    const value = e.target.value;
+    setInputValue(value);
+    // Show suggestions when typing if there are items available
+    if (canAddMore) {
+      const selectedIds = new Set(selectedItems.map(item => item.id));
+      let filtered: WardrobeItem[];
+      
+      if (value.trim()) {
+        filtered = items.filter(item =>
+          item.title.toLowerCase().includes(value.toLowerCase()) &&
+          !selectedIds.has(item.id)
+        );
+      } else {
+        filtered = items.filter(item => !selectedIds.has(item.id));
+      }
+      
+      setFilteredItems(filtered);
+      setShowSuggestions(filtered.length > 0);
+    }
   };
 
   const handleSelectItem = (item: WardrobeItem) => {
@@ -93,13 +112,14 @@ const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
         <div className="selected-items">
           {selectedItems.map((item) => (
             <span key={item.id} className="item-tag">
-              {item.imageUrl && (
-                <img 
-                  src={`${apiUrl}${item.imageUrl}`} 
-                  alt={item.title}
-                  className="item-tag-image"
-                />
-              )}
+              <img 
+                src={getItemImageUrl(item, apiUrl)} 
+                alt={item.title}
+                className="item-tag-image"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
+                }}
+              />
               <span className="item-tag-title">{item.title}</span>
               <button
                 type="button"
@@ -130,6 +150,15 @@ const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
               setShowSuggestions(availableItems.length > 0);
             }
           }}
+          onClick={() => {
+            // Show suggestions when clicked if there are items available
+            if (canAddMore) {
+              const selectedIds = new Set(selectedItems.map(item => item.id));
+              const availableItems = items.filter(item => !selectedIds.has(item.id));
+              setFilteredItems(availableItems);
+              setShowSuggestions(availableItems.length > 0);
+            }
+          }}
           placeholder={canAddMore ? `Search and add items (${selectedItems.length}/${maxItems})...` : `Maximum ${maxItems} items selected`}
           disabled={disabled || !canAddMore}
           className="item-input"
@@ -143,13 +172,14 @@ const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
                 className="item-suggestion-item"
               >
                 <div className="item-suggestion-content">
-                  {item.imageUrl && (
-                    <img 
-                      src={`${apiUrl}${item.imageUrl}`} 
-                      alt={item.title}
-                      className="item-suggestion-image"
-                    />
-                  )}
+                  <img 
+                    src={getItemImageUrl(item, apiUrl)} 
+                    alt={item.title}
+                    className="item-suggestion-image"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
+                    }}
+                  />
                   <div className="item-suggestion-text">
                     <span className="item-suggestion-title">{item.title}</span>
                     <span className="item-suggestion-category">{item.category}</span>

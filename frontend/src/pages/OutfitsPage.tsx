@@ -4,6 +4,7 @@ import { WardrobeItem } from '../App';
 import FeedbackModal from '../components/FeedbackModal';
 import ItemAutocomplete from '../components/ItemAutocomplete';
 import { PageHeader, SectionHeader, Button } from '../design-system';
+import { getItemImageUrl, getPlaceholderImage } from '../utils/placeholderImages';
 
 interface OutfitsPageProps {
   apiUrl: string;
@@ -404,12 +405,11 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                         {item ? (
                           <>
                             <img
-                              src={`${apiUrl}${item.imageUrl}`}
+                              src={getItemImageUrl(item, apiUrl)}
                               alt={itemTitle}
                               className="outfit-item-image"
                               onError={(e) => {
-                                (e.target as HTMLImageElement).src =
-                                  'https://via.placeholder.com/80';
+                                (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
                               }}
                             />
                             <span className="outfit-item-title">{itemTitle}</span>
@@ -488,12 +488,11 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                         {item ? (
                           <>
                             <img
-                              src={`${apiUrl}${item.imageUrl}`}
+                              src={getItemImageUrl(item, apiUrl)}
                               alt={itemTitle}
                               className="outfit-item-image"
                               onError={(e) => {
-                                (e.target as HTMLImageElement).src =
-                                  'https://via.placeholder.com/80';
+                                (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
                               }}
                             />
                             <span className="outfit-item-title">{itemTitle}</span>
