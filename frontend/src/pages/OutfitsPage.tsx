@@ -267,12 +267,15 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
 
   return (
     <div className="OutfitsPage">
-      <h1>Outfit Generator</h1>
-      <p className="page-description">
-        Generate personalized outfit combinations based on your wardrobe and style preferences
-      </p>
+      <div className="page-header">
+        <h1>Outfits</h1>
+        <p className="page-description">
+          Generate personalized outfit combinations based on your wardrobe and style preferences
+        </p>
+      </div>
 
       <div className="generate-section">
+        <h2 className="section-heading">Outfit Generator</h2>
         <div className="generate-form">
           <div className="form-group">
             <label htmlFor="prompt">Additional Context (Optional)</label>

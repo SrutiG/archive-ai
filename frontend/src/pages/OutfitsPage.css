@@ -5,32 +5,24 @@
 }
 
 .OutfitsPage h1 {
-  color: #000;
-  margin-bottom: 0.5rem;
-  font-family: 'Playfair Display', serif;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.page-description {
-  color: #666;
-  font-size: 0.875rem;
-  margin-bottom: 3rem;
-  font-weight: 300;
-  letter-spacing: 0.02em;
+  /* Using global page-header styles */
 }
 
 .generate-section {
-  background: #fff;
-  border: 1px solid #000;
-  padding: 3rem;
+  padding: 2rem 0;
   margin-bottom: 3rem;
+  max-width: 600px;
+  margin-top: 2rem;
+}
+
+.generate-section .section-heading {
+  margin-bottom: 2rem;
 }
 
 .generate-form {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1.5rem;
 }
 
 .form-group {
@@ -74,15 +66,19 @@
 }
 
 .status-badge {
-  background: #000;
-  color: #fff;
-  padding: 1rem;
-  border: 1px solid #000;
+  background: #f5f5f5;
+  color: #000;
+  padding: 0.5rem 1rem;
+  border: 1px solid #ccc;
   font-size: 0.75rem;
-  font-weight: 500;
-  text-align: center;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 400;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  width: auto;
+  max-width: 300px;
+  display: inline-block;
+  cursor: default;
 }
 
 .info-message {
@@ -107,8 +103,10 @@
 }
 
 .generate-btn {
-  width: 100%;
-  padding: 1rem;
+  width: auto;
+  min-width: 200px;
+  max-width: 300px;
+  padding: 0.75rem 1.5rem;
   font-size: 0.75rem;
   margin-top: 0.5rem;
   border: 1px solid #000;
@@ -116,6 +114,7 @@
   color: #fff;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+  align-self: flex-start;
 }
 
 .generate-btn:hover:not(:disabled) {
@@ -133,16 +132,19 @@
 .generated-outfits-section,
 .saved-outfits-section {
   margin-top: 3rem;
+  padding-top: 0;
 }
 
 .generated-outfits-section h2,
 .saved-outfits-section h2 {
   color: #000;
   margin-bottom: 2rem;
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-family: 'Playfair Display', serif;
   font-weight: 700;
   letter-spacing: 0.03em;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .outfits-list {
@@ -296,9 +298,8 @@
 }
 
 .feedback-section {
-  margin-top: 4rem;
-  border-top: 1px solid #000;
-  padding-top: 2rem;
+  margin-top: 3rem;
+  padding-top: 0;
 }
 
 .feedback-toggle-btn {
@@ -322,9 +323,12 @@
 
 .feedback-list h2 {
   margin-bottom: 2rem;
+  font-size: 1.25rem;
   font-family: 'Playfair Display', serif;
   font-weight: 700;
   letter-spacing: 0.03em;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .feedback-items {

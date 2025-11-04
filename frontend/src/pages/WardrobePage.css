@@ -5,17 +5,5 @@
 }
 
 .WardrobePage h1 {
-  color: #000;
-  margin-bottom: 0.5rem;
-  font-family: 'Playfair Display', serif;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.page-description {
-  color: #666;
-  font-size: 0.875rem;
-  margin-bottom: 3rem;
-  font-weight: 300;
-  letter-spacing: 0.02em;
+  /* Using global page-header styles */
 }

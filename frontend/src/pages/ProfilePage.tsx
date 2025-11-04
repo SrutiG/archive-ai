@@ -60,10 +60,12 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
 
   return (
     <div className="ProfilePage">
-      <h1>Your Profile</h1>
-      <p className="page-description">
-        Add your measurements and style preferences to help generate better-fitting and personalized outfit combinations
-      </p>
+      <div className="page-header">
+        <h1>Your Profile</h1>
+        <p className="page-description">
+          Add your measurements and style preferences to help generate better-fitting and personalized outfit combinations
+        </p>
+      </div>
 
       <form onSubmit={handleSubmit} className="profile-form">
         <div className="form-section">

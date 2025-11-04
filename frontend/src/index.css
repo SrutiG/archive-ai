@@ -13,3 +13,55 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Playfair Display', serif; /* Serif font for headings */
+  color: #000;
+}
+
+/* Page Header Design System */
+.page-header {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #000;
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  color: #000;
+}
+
+.page-description {
+  color: #666;
+  font-size: 0.875rem;
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  margin-top: 0.5rem;
+}
+
+/* Section Divider Design System */
+.section-divider {
+  border-top: 1px solid #f0f0f0;
+  margin-top: 3rem;
+  margin-bottom: 3rem;
+  padding-top: 3rem;
+}
+
+.section-divider:first-of-type {
+  margin-top: 2rem;
+}
+
+/* Section Heading Design System */
+.section-heading {
+  font-size: 1.25rem;
+  font-family: 'Playfair Display', serif;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #000;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #f0f0f0;
+}

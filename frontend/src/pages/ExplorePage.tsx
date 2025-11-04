@@ -127,7 +127,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
   return (
     <div className="ExplorePage">
       <div className="explore-header">
-        <div>
+        <div className="page-header">
           <h1>Explore</h1>
           <p className="page-description">
             Discover items that complement your wardrobe based on your style preferences
