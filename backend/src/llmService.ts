@@ -95,9 +95,20 @@ export async function categorizeItem(title: string, imagePath: string): Promise<
   }
 }
 
+export interface OutfitFeedback {
+  id: string;
+  itemTitles: string[];
+  type: 'like' | 'dislike';
+  feedback?: string;
+  createdAt: string;
+  prompt?: string;
+}
+
 export async function generateOutfits(
   itemsByCategory: Record<string, WardrobeItem[]>,
-  userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string }
+  userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string },
+  prompt?: string,
+  feedback?: OutfitFeedback[]
 ): Promise<string[][]> {
   try {
     console.log('[LLM] Starting outfit generation...');
@@ -147,6 +158,49 @@ export async function generateOutfits(
       }
     }
 
+    // Add prompt context if provided
+    let promptContext = '';
+    if (prompt) {
+      promptContext = `Additional context: ${prompt}. `;
+      console.log(`[LLM] Generation prompt: ${prompt}`);
+    }
+
+    // Add feedback context if provided
+    let feedbackContext = '';
+    if (feedback && feedback.length > 0) {
+      const likes = feedback.filter(f => f.type === 'like');
+      const dislikes = feedback.filter(f => f.type === 'dislike');
+      
+      const feedbackParts: string[] = [];
+      
+      if (likes.length > 0) {
+        const likedItems = likes.map(f => {
+          let desc = f.itemTitles.join(', ');
+          if (f.feedback) {
+            desc += ` (user note: ${f.feedback})`;
+          }
+          return desc;
+        }).join('; ');
+        feedbackParts.push(`User liked these outfits: ${likedItems}`);
+      }
+      
+      if (dislikes.length > 0) {
+        const dislikedItems = dislikes.map(f => {
+          let desc = f.itemTitles.join(', ');
+          if (f.feedback) {
+            desc += ` (user note: ${f.feedback})`;
+          }
+          return desc;
+        }).join('; ');
+        feedbackParts.push(`User disliked these outfits: ${dislikedItems}`);
+      }
+      
+      if (feedbackParts.length > 0) {
+        feedbackContext = `User feedback on previous outfits: ${feedbackParts.join('. ')}. Use this feedback to generate better outfits that align with user preferences. `;
+        console.log(`[LLM] Including ${feedback.length} feedback entries (${likes.length} likes, ${dislikes.length} dislikes)`);
+      }
+    }
+
     console.log('[LLM] Calling OpenAI API for outfit generation...');
     const startTime = Date.now();
     const response = await openai.chat.completions.create({
@@ -163,7 +217,7 @@ export async function generateOutfits(
         },
         {
           role: 'user',
-          content: `${userContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Return a JSON object with an "outfits" key containing an array of arrays with item titles.`
+          content: `${userContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of arrays with item titles. Generate exactly 5 outfit combinations.`
         }
       ],
       max_tokens: 500,

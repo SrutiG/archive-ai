@@ -12,6 +12,8 @@ interface WardrobeData {
   outfitGenerationClicks: number;
   lastClickResetDate: string;
   userProfile?: UserProfile;
+  savedOutfits?: any[];
+  outfitFeedback?: any[];
 }
 
 function ensureDataDir() {
@@ -48,6 +50,18 @@ function getSeedData(): WardrobeData {
     heightUnit: 'inches',
     weightUnit: 'lbs'
   };
+  
+  // Clear existing images before seeding new ones
+  if (fs.existsSync(UPLOADS_DIR)) {
+    const files = fs.readdirSync(UPLOADS_DIR);
+    files.forEach(file => {
+      const filePath = path.join(UPLOADS_DIR, file);
+      if (fs.statSync(filePath).isFile()) {
+        fs.unlinkSync(filePath);
+      }
+    });
+    console.log(`Cleared ${files.length} existing image files`);
+  }
 
   // Item templates based on actual wardrobe
   const itemTemplates: Array<Omit<WardrobeItem, 'id' | 'imageUrl'>> = [
@@ -561,7 +575,9 @@ function getSeedData(): WardrobeData {
     items,
     outfitGenerationClicks: 0,
     lastClickResetDate: new Date().toDateString(),
-    userProfile
+    userProfile,
+    savedOutfits: [],
+    outfitFeedback: []
   };
 }
 
@@ -570,22 +586,29 @@ console.log('Seeding wardrobe data...');
 try {
   ensureDataDir();
 
-  // Check if data file already exists
+  // Check if data file already exists and warn user
   if (fs.existsSync(DATA_FILE)) {
-    console.log('⚠️  Data file already exists. Use "npm run clear-data" first to reset.');
-    process.exit(1);
+    console.log('⚠️  Data file already exists. Restoring database to seeded state...');
+    console.log('   This will overwrite all existing data, saved outfits, and feedback.');
+    
+    // Create backup before overwriting
+    const backupFile = `${DATA_FILE}.backup.${Date.now()}`;
+    fs.copyFileSync(DATA_FILE, backupFile);
+    console.log(`   Backup created: ${path.basename(backupFile)}`);
   }
 
   const seedData = getSeedData();
   
+  // Write the seed data (overwriting if exists)
   fs.writeFileSync(DATA_FILE, JSON.stringify(seedData, null, 2), 'utf-8');
   
-  console.log('✅ Seeded wardrobe data successfully!');
+  console.log('✅ Database restored to seeded state!');
   console.log(`   - Added ${seedData.items.length} items`);
   console.log(`   - Created ${seedData.items.length} placeholder image files in uploads/`);
   console.log(`   - User profile: ${seedData.userProfile?.height}" height, ${seedData.userProfile?.weight} lbs`);
   console.log(`   - Items are mostly black as noted in your wardrobe index`);
   console.log(`   - Categories: ${[...new Set(seedData.items.map(i => i.category))].join(', ')}`);
+  console.log(`   - Reset: Saved outfits and feedback have been cleared`);
   console.log(`   - Note: Placeholder images are minimal 1x1 PNGs (browsers will scale them)`);
 } catch (error) {
   console.error('❌ Error seeding data:', error);

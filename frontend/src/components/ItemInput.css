@@ -1,34 +1,43 @@
 .ItemInput {
-  background: white;
-  border-radius: 12px;
-  padding: 2rem;
-  margin-bottom: 2rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #fff;
+  border: 1px solid #000;
+  padding: 3rem;
+  margin-bottom: 3rem;
 }
 
 .ItemInput h2 {
-  margin-bottom: 1.5rem;
-  color: #333;
+  margin-bottom: 2rem;
+  color: #000;
+  font-family: 'Playfair Display', serif;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 .form-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .form-group label {
   display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
-  color: #555;
+  margin-bottom: 0.75rem;
+  font-weight: 500;
+  color: #000;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.form-group input[type="text"] {
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select,
+.form-group textarea {
   width: 100%;
   padding: 0.75rem;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: border-color 0.3s;
+  border: 1px solid #000;
+  border-radius: 0;
+  font-size: 0.875rem;
+  transition: all 0.2s;
+  font-family: 'Inter', sans-serif;
 }
 
 .form-group input[type="text"]:focus,
@@ -36,35 +45,24 @@
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #000;
 }
 
 .form-group select {
-  width: 100%;
-  padding: 0.75rem;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 1rem;
-  background: white;
-  transition: border-color 0.3s;
+  background: #fff;
+  cursor: pointer;
 }
 
 .form-group textarea {
-  width: 100%;
-  padding: 0.75rem;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-family: inherit;
   resize: vertical;
-  transition: border-color 0.3s;
+  font-family: 'Inter', sans-serif;
 }
 
 .measurements-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1rem;
-  margin-top: 0.5rem;
+  gap: 1.5rem;
+  margin-top: 1rem;
 }
 
 .measurement-field {
@@ -73,134 +71,160 @@
 }
 
 .measurement-field label {
-  font-size: 0.9rem;
-  margin-bottom: 0.25rem;
-  color: #666;
+  font-size: 0.75rem;
+  margin-bottom: 0.5rem;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
 }
 
 .measurement-field input {
-  padding: 0.5rem;
-  border: 2px solid #e0e0e0;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  transition: border-color 0.3s;
+  padding: 0.75rem;
+  border: 1px solid #000;
+  border-radius: 0;
+  font-size: 0.875rem;
+  transition: all 0.2s;
 }
 
 .measurement-field input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #000;
 }
 
 .photo-options {
   display: flex;
   gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.btn {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.btn-secondary {
-  background: #f0f0f0;
-  color: #333;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: #e0e0e0;
-}
-
-.btn-small {
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
 }
 
 .camera-container {
   margin-top: 1rem;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #000;
+  border: 1px solid #000;
+  padding: 1rem;
 }
 
 .camera-video {
   width: 100%;
-  max-height: 400px;
+  max-width: 400px;
   display: block;
+  margin: 0 auto;
+  border: 1px solid #000;
 }
 
 .camera-controls {
-  padding: 1rem;
-  background: white;
   display: flex;
   gap: 1rem;
   justify-content: center;
+  margin-top: 1rem;
 }
 
 .capture-btn {
-  font-size: 1.2rem;
-  padding: 1rem 2rem;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid #000;
+  background: #000;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.capture-btn:hover {
+  background: #fff;
+  color: #000;
 }
 
 .preview-container {
   margin-top: 1rem;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
 }
 
 .preview-image {
-  max-width: 100%;
-  max-height: 300px;
-  border-radius: 8px;
-  margin-bottom: 1rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  max-width: 200px;
+  max-height: 200px;
+  object-fit: cover;
+  border: 1px solid #000;
+}
+
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: 1px solid #000;
+  background: #000;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-radius: 0;
+  font-family: 'Inter', sans-serif;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #000;
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #fff;
+  color: #000;
+}
+
+.btn-secondary {
+  background: #fff;
+  color: #000;
+  border: 1px solid #000;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #000;
+  color: #fff;
+}
+
+.btn-small {
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
 }
 
 .error-message {
-  background: #fee;
-  color: #c33;
-  padding: 0.75rem;
-  border-radius: 8px;
-  margin-bottom: 1rem;
-  border: 1px solid #fcc;
+  background: #fff;
+  color: #000;
+  padding: 1rem;
+  border: 1px solid #000;
+  margin-bottom: 1.5rem;
+  border-radius: 0;
+  font-size: 0.875rem;
 }
 
 .edit-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .edit-header h2 {
   margin: 0;
+  font-family: 'Playfair Display', serif;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 .form-actions {
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
-  margin-top: 1.5rem;
+  margin-top: 2rem;
 }
 
 .form-actions .btn {

@@ -6,7 +6,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import { generateOutfits } from './llmService';
-import { loadWardrobeData, saveItems, saveOutfitClicks, saveUserProfile } from './storage';
+import { loadWardrobeData, saveItems, saveOutfitClicks, saveUserProfile, saveOutfits, saveFeedback } from './storage';
 
 dotenv.config();
 
@@ -94,6 +94,32 @@ export interface UserProfile {
   heightUnit?: 'inches' | 'cm';
   weightUnit?: 'lbs' | 'kg';
   stylePreferences?: string; // Personal style preferences description
+  // Additional measurements
+  waist?: number;
+  chest?: number;
+  hips?: number;
+  inseam?: number;
+  shoeSize?: string;
+  measurementsUnit?: 'inches' | 'cm';
+}
+
+// Saved outfit interface
+export interface SavedOutfit {
+  id: string;
+  itemTitles: string[];
+  createdAt: string;
+  prompt?: string; // Context/prompt used to generate this outfit
+  notes?: string; // User's notes about the outfit
+}
+
+// Outfit feedback interface
+export interface OutfitFeedback {
+  id: string;
+  itemTitles: string[];
+  type: 'like' | 'dislike';
+  feedback?: string; // Optional user feedback text
+  createdAt: string;
+  prompt?: string; // The prompt used when this outfit was generated
 }
 
 // Load data from storage on startup
@@ -101,6 +127,8 @@ const initialData = loadWardrobeData();
 let wardrobeItems: WardrobeItem[] = initialData.items;
 let outfitGenerationClicks = initialData.outfitGenerationClicks;
 let userProfile: UserProfile = initialData.userProfile || {};
+let savedOutfits: SavedOutfit[] = initialData.savedOutfits || [];
+let outfitFeedback: OutfitFeedback[] = initialData.outfitFeedback || [];
 const MAX_OUTFIT_CLICKS_PER_DAY = 10;
 let lastClickResetDate = initialData.lastClickResetDate;
 
@@ -133,6 +161,8 @@ app.post('/api/reload', (req, res) => {
     outfitGenerationClicks = freshData.outfitGenerationClicks;
     lastClickResetDate = freshData.lastClickResetDate;
     userProfile = freshData.userProfile || {};
+    savedOutfits = freshData.savedOutfits || [];
+    outfitFeedback = freshData.outfitFeedback || [];
     
     console.log(`Reloaded ${wardrobeItems.length} items from storage`);
     res.json({ 
@@ -290,13 +320,19 @@ app.post('/api/outfits/generate', async (req, res) => {
       });
     }
 
+    // Get optional prompt from request body
+    const { prompt } = req.body;
+    if (prompt) {
+      console.log(`Generation prompt: ${prompt}`);
+    }
+
     // Generate outfits using LLM with user profile and item descriptions
     console.log('Calling LLM to generate outfit combinations...');
     console.log(`User profile: Height ${userProfile.height || 'N/A'} ${userProfile.heightUnit || ''}, Weight ${userProfile.weight || 'N/A'} ${userProfile.weightUnit || ''}`);
     if (userProfile.stylePreferences) {
       console.log(`Style preferences: ${userProfile.stylePreferences.substring(0, 100)}...`);
     }
-    const outfits = await generateOutfits(itemsByCategory, userProfile);
+    const outfits = await generateOutfits(itemsByCategory, userProfile, prompt, outfitFeedback);
     console.log(`Generated ${outfits.length} outfit combinations`);
     
     outfitGenerationClicks++;
@@ -456,14 +492,23 @@ app.get('/api/user/profile', (req, res) => {
 // Update user profile
 app.post('/api/user/profile', (req, res) => {
   try {
-    const { height, weight, heightUnit, weightUnit, stylePreferences } = req.body;
+    const { 
+      height, weight, heightUnit, weightUnit, stylePreferences,
+      waist, chest, hips, inseam, shoeSize, measurementsUnit
+    } = req.body;
     
     userProfile = {
       height: height ? Number(height) : undefined,
       weight: weight ? Number(weight) : undefined,
       heightUnit: heightUnit || 'inches',
       weightUnit: weightUnit || 'lbs',
-      stylePreferences: stylePreferences || undefined
+      stylePreferences: stylePreferences || undefined,
+      waist: waist ? Number(waist) : undefined,
+      chest: chest ? Number(chest) : undefined,
+      hips: hips ? Number(hips) : undefined,
+      inseam: inseam ? Number(inseam) : undefined,
+      shoeSize: shoeSize || undefined,
+      measurementsUnit: measurementsUnit || 'inches'
     };
     
     console.log('Updated user profile:', userProfile);
@@ -486,6 +531,131 @@ app.get('/api/categories', (req, res) => {
     'Accessories', 'Bags', 'Jewelry', 'Activewear', 'Underwear'
   ];
   res.json(categories);
+});
+
+// Get saved outfits
+app.get('/api/outfits/saved', (req, res) => {
+  console.log(`Returning ${savedOutfits.length} saved outfits`);
+  res.json(savedOutfits);
+});
+
+// Save an outfit
+app.post('/api/outfits/save', (req, res) => {
+  try {
+    const { itemTitles, prompt, notes } = req.body;
+    
+    if (!itemTitles || !Array.isArray(itemTitles) || itemTitles.length === 0) {
+      return res.status(400).json({ error: 'Item titles are required' });
+    }
+
+    // Validate that all items exist
+    const allItemTitles = wardrobeItems.map(item => item.title);
+    const invalidTitles = itemTitles.filter((title: string) => !allItemTitles.includes(title));
+    if (invalidTitles.length > 0) {
+      return res.status(400).json({ 
+        error: 'Some items not found in wardrobe',
+        invalidItems: invalidTitles
+      });
+    }
+
+    const newOutfit: SavedOutfit = {
+      id: uuidv4(),
+      itemTitles,
+      createdAt: new Date().toISOString(),
+      prompt: prompt || undefined,
+      notes: notes || undefined
+    };
+
+    savedOutfits.push(newOutfit);
+    saveOutfits(savedOutfits);
+    
+    console.log(`Saved outfit with ${itemTitles.length} items`);
+    res.status(201).json(newOutfit);
+  } catch (error) {
+    console.error('Error saving outfit:', error);
+    res.status(500).json({ error: 'Failed to save outfit' });
+  }
+});
+
+// Delete a saved outfit
+app.delete('/api/outfits/saved/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const outfitIndex = savedOutfits.findIndex(outfit => outfit.id === id);
+    
+    if (outfitIndex === -1) {
+      return res.status(404).json({ error: 'Outfit not found' });
+    }
+
+    savedOutfits.splice(outfitIndex, 1);
+    saveOutfits(savedOutfits);
+    
+    console.log(`Deleted saved outfit: ${id}`);
+    res.json({ message: 'Outfit deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting outfit:', error);
+    res.status(500).json({ error: 'Failed to delete outfit' });
+  }
+});
+
+// Save outfit feedback
+app.post('/api/outfits/feedback', (req, res) => {
+  try {
+    const { itemTitles, type, feedback, prompt } = req.body;
+    
+    if (!itemTitles || !Array.isArray(itemTitles) || itemTitles.length === 0) {
+      return res.status(400).json({ error: 'Item titles are required' });
+    }
+
+    if (!type || (type !== 'like' && type !== 'dislike')) {
+      return res.status(400).json({ error: 'Feedback type must be "like" or "dislike"' });
+    }
+
+    const newFeedback: OutfitFeedback = {
+      id: uuidv4(),
+      itemTitles,
+      type,
+      feedback: feedback || undefined,
+      createdAt: new Date().toISOString(),
+      prompt: prompt || undefined
+    };
+
+    outfitFeedback.push(newFeedback);
+    saveFeedback(outfitFeedback);
+    
+    console.log(`Saved ${type} feedback for outfit with ${itemTitles.length} items`);
+    res.status(201).json(newFeedback);
+  } catch (error) {
+    console.error('Error saving feedback:', error);
+    res.status(500).json({ error: 'Failed to save feedback' });
+  }
+});
+
+// Get all feedback
+app.get('/api/outfits/feedback', (req, res) => {
+  console.log(`Returning ${outfitFeedback.length} feedback entries`);
+  res.json(outfitFeedback);
+});
+
+// Delete feedback
+app.delete('/api/outfits/feedback/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const feedbackIndex = outfitFeedback.findIndex(f => f.id === id);
+    
+    if (feedbackIndex === -1) {
+      return res.status(404).json({ error: 'Feedback not found' });
+    }
+
+    outfitFeedback.splice(feedbackIndex, 1);
+    saveFeedback(outfitFeedback);
+    
+    console.log(`Deleted feedback: ${id}`);
+    res.json({ message: 'Feedback deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting feedback:', error);
+    res.status(500).json({ error: 'Failed to delete feedback' });
+  }
 });
 
 app.listen(PORT, () => {

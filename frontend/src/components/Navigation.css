@@ -1,0 +1,76 @@
+.Navigation {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 240px;
+  height: 100vh;
+  background: #000;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #333;
+  z-index: 1000;
+}
+
+.nav-brand {
+  padding: 2rem 1.5rem;
+  border-bottom: 1px solid #333;
+}
+
+.nav-brand h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  margin: 0;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+.nav-links {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 0;
+  flex: 1;
+}
+
+.Navigation a {
+  padding: 1rem 1.5rem;
+  text-decoration: none;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+}
+
+.Navigation a:hover {
+  background: #111;
+  border-left-color: #fff;
+}
+
+.Navigation a.active {
+  background: #fff;
+  color: #000;
+  border-left-color: #000;
+  font-weight: 500;
+}
+
+.Navigation a.active:hover {
+  background: #fff;
+  border-left-color: #000;
+}
+
+@media (max-width: 768px) {
+  .Navigation {
+    width: 200px;
+  }
+  
+  .nav-brand h1 {
+    font-size: 1.25rem;
+  }
+}
