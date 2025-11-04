@@ -259,6 +259,59 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
           </div>
         </div>
 
+        <div className="form-section">
+          <SectionHeader title="Appearance Details (Optional)" />
+          <p className="section-description">
+            These optional fields help the AI generate outfit combinations with colors and styles that complement your appearance
+          </p>
+          <div className="profile-grid">
+            <div className="form-group">
+              <label htmlFor="hairColor">Hair Color (Optional)</label>
+              <input
+                type="text"
+                id="hairColor"
+                value={profile.hairColor || ''}
+                onChange={(e) => setProfile({ ...profile, hairColor: e.target.value || undefined })}
+                placeholder="e.g., Black, Brown, Blonde, Red"
+                disabled={loading}
+              />
+              <small>
+                Helps suggest colors that complement your hair
+              </small>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="hairTexture">Hair Texture (Optional)</label>
+              <input
+                type="text"
+                id="hairTexture"
+                value={profile.hairTexture || ''}
+                onChange={(e) => setProfile({ ...profile, hairTexture: e.target.value || undefined })}
+                placeholder="e.g., Straight, Wavy, Curly, Coily"
+                disabled={loading}
+              />
+              <small>
+                Helps with styling suggestions for your hair
+              </small>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="skinColor">Skin Color (Optional)</label>
+              <input
+                type="text"
+                id="skinColor"
+                value={profile.skinColor || ''}
+                onChange={(e) => setProfile({ ...profile, skinColor: e.target.value || undefined })}
+                placeholder="e.g., Fair, Light, Medium, Tan, Deep"
+                disabled={loading}
+              />
+              <small>
+                Helps suggest colors that complement your skin tone
+              </small>
+            </div>
+          </div>
+        </div>
+
         {error && <div className="error-message">{error}</div>}
         {success && <div className="success-message">Profile updated successfully!</div>}
 

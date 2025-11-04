@@ -114,13 +114,19 @@ export interface OutfitFeedback {
   prompt?: string;
 }
 
+export interface GeneratedOutfit {
+  items: string[];
+  justification: string;
+  stylingSuggestions: string[];
+}
+
 export async function generateOutfits(
   itemsByCategory: Record<string, WardrobeItem[]>,
-  userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[] },
+  userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[]; hairColor?: string; hairTexture?: string; skinColor?: string },
   prompt?: string,
   feedback?: OutfitFeedback[],
   selectedItems?: WardrobeItem[]
-): Promise<string[][]> {
+): Promise<GeneratedOutfit[]> {
   try {
     console.log('[LLM] Starting outfit generation...');
     
@@ -162,6 +168,21 @@ export async function generateOutfits(
       
       if (userProfile.stylePreferences) {
         contextParts.push(`Style preferences: ${userProfile.stylePreferences}`);
+      }
+      
+      // Appearance details
+      const appearanceParts: string[] = [];
+      if (userProfile.hairColor) {
+        appearanceParts.push(`hair color: ${userProfile.hairColor}`);
+      }
+      if (userProfile.hairTexture) {
+        appearanceParts.push(`hair texture: ${userProfile.hairTexture}`);
+      }
+      if (userProfile.skinColor) {
+        appearanceParts.push(`skin color: ${userProfile.skinColor}`);
+      }
+      if (appearanceParts.length > 0) {
+        contextParts.push(`Appearance: ${appearanceParts.join(', ')}`);
       }
       
       if (contextParts.length > 0) {
@@ -247,18 +268,25 @@ export async function generateOutfits(
         {
           role: 'system',
           content: `You are a fashion stylist. Generate 5-7 outfit combinations using the available wardrobe items. 
-          Each outfit should include items from different categories that work well together.
+          Each outfit can include up to 10 pieces. You can include multiple items from the same category (e.g., multiple jewelry pieces, multiple jacket layers). 
           Pay close attention to the user's style preferences and personal aesthetic when creating combinations.
-          Return the outfits as a JSON object with a key "outfits" containing an array of arrays, where each inner array contains the titles of items in that outfit.
-          Example format: {"outfits": [["Blue Shirt", "Black Jeans", "White Sneakers"], ["Red Dress", "Black Heels"]]}
+          For each outfit, provide:
+          1. A list of item titles (up to 10 pieces)
+          2. A justification explaining why you chose this specific combination
+          3. Styling suggestions (e.g., "wear blazer half buttoned", "wear hair in bun", "light makeup", "tuck in shirt", "cuff the sleeves")
+          Return the outfits as a JSON object with a key "outfits" containing an array of objects, where each object has:
+          - "items": array of item titles (up to 10 pieces)
+          - "justification": string explaining why this combination works
+          - "stylingSuggestions": array of styling tips (e.g., ["wear blazer half buttoned", "wear hair in bun", "light makeup"])
+          Example format: {"outfits": [{"items": ["Blue Shirt", "Black Jeans", "White Sneakers"], "justification": "This combination creates a casual yet polished look...", "stylingSuggestions": ["tuck in shirt", "cuff the sleeves"]}, ...]}
           Only return the JSON object, no other text.`
         },
         {
           role: 'user',
-          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the 5 generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of arrays with item titles. Generate exactly 5 outfit combinations, each containing all selected items.`
+          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the 5 generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly 5 outfit combinations.`
         }
       ],
-      max_tokens: 500,
+      max_tokens: 2000,
       temperature: 0.7,
       response_format: { type: 'json_object' }
     });
@@ -278,25 +306,63 @@ export async function generateOutfits(
     console.log(`[LLM] Response length: ${content.length} characters`);
     
     // Try to parse the response
-    let outfits: string[][];
+    let outfits: GeneratedOutfit[];
     try {
       const parsed = JSON.parse(content);
       // Handle both { "outfits": [...] } and direct array formats
       if (Array.isArray(parsed)) {
-        outfits = parsed;
+        // Convert old format to new format
+        outfits = parsed.map((outfit: any) => {
+          if (typeof outfit === 'object' && outfit.items) {
+            // Already in new format
+            return {
+              items: outfit.items || [],
+              justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
+              stylingSuggestions: outfit.stylingSuggestions || []
+            };
+          } else if (Array.isArray(outfit)) {
+            // Old format - array of strings
+            return {
+              items: outfit,
+              justification: 'This combination creates a stylish and cohesive look.',
+              stylingSuggestions: []
+            };
+          } else {
+            return {
+              items: [],
+              justification: 'This combination creates a stylish and cohesive look.',
+              stylingSuggestions: []
+            };
+          }
+        });
         console.log('[LLM] Parsed as direct array');
       } else if (parsed.outfits && Array.isArray(parsed.outfits)) {
-        outfits = parsed.outfits;
+        outfits = parsed.outfits.map((outfit: any) => {
+          if (typeof outfit === 'object' && outfit.items) {
+            // New format
+            return {
+              items: outfit.items || [],
+              justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
+              stylingSuggestions: outfit.stylingSuggestions || []
+            };
+          } else if (Array.isArray(outfit)) {
+            // Old format - array of strings
+            return {
+              items: outfit,
+              justification: 'This combination creates a stylish and cohesive look.',
+              stylingSuggestions: []
+            };
+          } else {
+            return {
+              items: [],
+              justification: 'This combination creates a stylish and cohesive look.',
+              stylingSuggestions: []
+            };
+          }
+        });
         console.log('[LLM] Parsed as object with outfits key');
       } else {
-        // Try to extract arrays from the response
-        const arrayMatch = content.match(/\[\[.*?\]\]/s);
-        if (arrayMatch) {
-          outfits = JSON.parse(arrayMatch[0]);
-          console.log('[LLM] Extracted array from response');
-        } else {
-          throw new Error('Unexpected response format');
-        }
+        throw new Error('Unexpected response format');
       }
       console.log(`[LLM] Successfully parsed ${outfits.length} outfits`);
     } catch (parseError) {
@@ -306,16 +372,23 @@ export async function generateOutfits(
         console.error('[LLM] Parse error details:', parseError.message);
       }
       console.log('[LLM] Using fallback outfit generation');
-      outfits = generateFallbackOutfits(itemsByCategory);
+      const fallbackOutfits = generateFallbackOutfits(itemsByCategory);
+      outfits = fallbackOutfits.map(items => ({
+        items,
+        justification: 'This combination creates a stylish and cohesive look.',
+        stylingSuggestions: []
+      }));
     }
 
     // Validate and filter outfits
     const allItemTitles = Object.values(itemsByCategory).flat().map(item => item.title);
     const beforeFilter = outfits.length;
     outfits = outfits
-      .filter(outfit => Array.isArray(outfit) && outfit.length > 0)
-      .map(outfit => outfit.filter(title => allItemTitles.includes(title)))
-      .filter(outfit => outfit.length > 0)
+      .map(outfit => ({
+        ...outfit,
+        items: outfit.items.filter(title => allItemTitles.includes(title)).slice(0, 10) // Limit to 10 items
+      }))
+      .filter(outfit => outfit.items.length > 0)
       .slice(0, 7); // Limit to 7 outfits
     
     if (beforeFilter !== outfits.length) {
@@ -324,12 +397,19 @@ export async function generateOutfits(
 
     if (outfits.length === 0) {
       console.log('[LLM] No valid outfits generated, using fallback');
-      return generateFallbackOutfits(itemsByCategory);
+      const fallbackOutfits = generateFallbackOutfits(itemsByCategory);
+      return fallbackOutfits.map(items => ({
+        items,
+        justification: 'This combination creates a stylish and cohesive look.',
+        stylingSuggestions: []
+      }));
     }
     
     console.log(`[LLM] Successfully generated ${outfits.length} outfit combinations`);
     outfits.forEach((outfit, index) => {
-      console.log(`[LLM]   Outfit ${index + 1}: ${outfit.join(' + ')}`);
+      console.log(`[LLM]   Outfit ${index + 1}: ${outfit.items.join(' + ')}`);
+      console.log(`[LLM]     Justification: ${outfit.justification.substring(0, 100)}...`);
+      console.log(`[LLM]     Styling suggestions: ${outfit.stylingSuggestions.length} tips`);
     });
     
     return outfits;
@@ -354,7 +434,7 @@ export interface ExploreSuggestion {
 
 export async function generateExploreSuggestions(
   wardrobeItems: WardrobeItem[],
-  userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[] },
+  userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[]; hairColor?: string; hairTexture?: string; skinColor?: string },
   feedback?: OutfitFeedback[]
 ): Promise<ExploreSuggestion[]> {
   try {
@@ -391,6 +471,21 @@ export async function generateExploreSuggestions(
       
       if (userProfile.brands && userProfile.brands.length > 0) {
         contextParts.push(`Favorite brands: ${userProfile.brands.join(', ')}`);
+      }
+      
+      // Appearance details
+      const appearanceParts: string[] = [];
+      if (userProfile.hairColor) {
+        appearanceParts.push(`hair color: ${userProfile.hairColor}`);
+      }
+      if (userProfile.hairTexture) {
+        appearanceParts.push(`hair texture: ${userProfile.hairTexture}`);
+      }
+      if (userProfile.skinColor) {
+        appearanceParts.push(`skin color: ${userProfile.skinColor}`);
+      }
+      if (appearanceParts.length > 0) {
+        contextParts.push(`Appearance: ${appearanceParts.join(', ')}`);
       }
       
       if (contextParts.length > 0) {

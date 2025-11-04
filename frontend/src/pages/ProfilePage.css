@@ -17,6 +17,14 @@
   margin-bottom: 3rem;
 }
 
+.section-description {
+  font-size: 0.875rem;
+  color: #666;
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+  font-weight: 400;
+}
+
 .form-section:last-of-type {
   margin-bottom: 2rem;
 }

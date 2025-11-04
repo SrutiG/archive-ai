@@ -38,6 +38,10 @@ export interface UserProfile {
   inseam?: number;
   shoeSize?: string;
   measurementsUnit?: 'inches' | 'cm';
+  // Appearance details (optional, helps with outfit generation)
+  hairColor?: string;
+  hairTexture?: string;
+  skinColor?: string;
 }
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';

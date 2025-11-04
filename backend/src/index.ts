@@ -102,6 +102,10 @@ export interface UserProfile {
   inseam?: number;
   shoeSize?: string;
   measurementsUnit?: 'inches' | 'cm';
+  // Appearance details (optional, helps with outfit generation)
+  hairColor?: string;
+  hairTexture?: string;
+  skinColor?: string;
 }
 
 // Saved outfit interface
@@ -528,7 +532,8 @@ app.post('/api/user/profile', (req, res) => {
   try {
     const { 
       height, weight, heightUnit, weightUnit, stylePreferences, brands,
-      waist, chest, hips, inseam, shoeSize, measurementsUnit
+      waist, chest, hips, inseam, shoeSize, measurementsUnit,
+      hairColor, hairTexture, skinColor
     } = req.body;
     
     userProfile = {
@@ -543,12 +548,18 @@ app.post('/api/user/profile', (req, res) => {
       hips: hips ? Number(hips) : undefined,
       inseam: inseam ? Number(inseam) : undefined,
       shoeSize: shoeSize || undefined,
-      measurementsUnit: measurementsUnit || 'inches'
+      measurementsUnit: measurementsUnit || 'inches',
+      hairColor: hairColor || undefined,
+      hairTexture: hairTexture || undefined,
+      skinColor: skinColor || undefined
     };
     
     console.log('Updated user profile:', userProfile);
     if (stylePreferences) {
       console.log(`Style preferences: ${stylePreferences.substring(0, 100)}...`);
+    }
+    if (hairColor || hairTexture || skinColor) {
+      console.log(`Appearance: hairColor=${hairColor || 'N/A'}, hairTexture=${hairTexture || 'N/A'}, skinColor=${skinColor || 'N/A'}`);
     }
     saveUserProfile(userProfile);
     

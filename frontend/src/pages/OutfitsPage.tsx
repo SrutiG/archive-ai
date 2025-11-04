@@ -11,7 +11,9 @@ interface OutfitsPageProps {
 }
 
 interface GeneratedOutfit {
-  itemTitles: string[];
+  items: string[];
+  justification: string;
+  stylingSuggestions: string[];
 }
 
 interface SavedOutfit {
@@ -119,12 +121,24 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
         throw new Error(data.error || 'Failed to generate outfits');
       }
 
-      // Ensure outfits is an array and each outfit has itemTitles
-      const outfits = (data.outfits || []).filter((outfit: any) => 
-        outfit && Array.isArray(outfit.itemTitles || outfit)
-      ).map((outfit: any) => ({
-        itemTitles: Array.isArray(outfit.itemTitles) ? outfit.itemTitles : (Array.isArray(outfit) ? outfit : [])
-      }));
+      // Ensure outfits is an array and handle both old and new formats
+      const outfits = (data.outfits || []).map((outfit: any) => {
+        // Handle new format with items, justification, stylingSuggestions
+        if (outfit.items && Array.isArray(outfit.items)) {
+          return {
+            items: outfit.items,
+            justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
+            stylingSuggestions: outfit.stylingSuggestions || []
+          };
+        }
+        // Handle old format with itemTitles or direct array
+        const items = Array.isArray(outfit.itemTitles) ? outfit.itemTitles : (Array.isArray(outfit) ? outfit : []);
+        return {
+          items,
+          justification: 'This combination creates a stylish and cohesive look.',
+          stylingSuggestions: []
+        };
+      }).filter((outfit: GeneratedOutfit) => outfit.items.length > 0);
 
       setGeneratedOutfits(outfits);
       setLikedOutfitIndices(new Set()); // Reset liked outfits when generating new ones
@@ -152,7 +166,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          itemTitles: outfit.itemTitles || [],
+          itemTitles: outfit.items || [],
           prompt: prompt || undefined,
         }),
       });
@@ -197,7 +211,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
 
   const handleLikeDislike = (outfit: GeneratedOutfit, index: number, type: 'like' | 'dislike') => {
     setFeedbackModalType(type);
-    setFeedbackModalOutfit(outfit.itemTitles);
+    setFeedbackModalOutfit(outfit.items);
     setFeedbackModalIndex(index);
     setShowFeedbackModal(true);
   };
@@ -398,7 +412,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                 )}
                 <div className="outfit-number">Outfit {index + 1}</div>
                 <div className="outfit-items">
-                  {(outfit.itemTitles || []).map((itemTitle: string, itemIndex: number) => {
+                  {(outfit.items || []).map((itemTitle: string, itemIndex: number) => {
                     const item = items.find((i) => i.title === itemTitle);
                     return (
                       <div key={itemIndex} className="outfit-item">
@@ -421,6 +435,21 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                     );
                   })}
                 </div>
+                {outfit.justification && (
+                  <div className="outfit-justification">
+                    <strong>Why this combination:</strong> {outfit.justification}
+                  </div>
+                )}
+                {outfit.stylingSuggestions && outfit.stylingSuggestions.length > 0 && (
+                  <div className="outfit-styling-suggestions">
+                    <strong>Styling suggestions:</strong>
+                    <ul>
+                      {outfit.stylingSuggestions.map((suggestion: string, suggestionIndex: number) => (
+                        <li key={suggestionIndex}>{suggestion}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <div className="outfit-actions">
                   <Button
                     variant="secondary"
