@@ -5,8 +5,8 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
-import { categorizeItem, generateOutfits } from './llmService';
-import { loadWardrobeData, saveItems, saveOutfitClicks } from './storage';
+import { generateOutfits } from './llmService';
+import { loadWardrobeData, saveItems, saveOutfitClicks, saveUserProfile } from './storage';
 
 dotenv.config();
 
@@ -73,13 +73,33 @@ export interface WardrobeItem {
   title: string;
   imageUrl: string;
   category: string;
+  description?: string; // Extended description for outfit generation
+  measurements?: {
+    // Category-specific measurements
+    size?: string; // Generic size (S, M, L, XL, etc.)
+    waist?: number; // Inches or cm
+    inseam?: number; // Inches or cm
+    chest?: number; // Inches or cm
+    length?: number; // Inches or cm
+    shoeSize?: string; // US, EU, UK sizes
+    [key: string]: string | number | undefined; // Allow flexible measurements
+  };
   createdAt: string;
+}
+
+// User profile interface
+export interface UserProfile {
+  height?: number; // in inches or cm
+  weight?: number; // in lbs or kg
+  heightUnit?: 'inches' | 'cm';
+  weightUnit?: 'lbs' | 'kg';
 }
 
 // Load data from storage on startup
 const initialData = loadWardrobeData();
 let wardrobeItems: WardrobeItem[] = initialData.items;
 let outfitGenerationClicks = initialData.outfitGenerationClicks;
+let userProfile: UserProfile = initialData.userProfile || {};
 const MAX_OUTFIT_CLICKS_PER_DAY = 10;
 let lastClickResetDate = initialData.lastClickResetDate;
 
@@ -101,6 +121,28 @@ function resetClickCounterIfNeeded() {
 app.get('/api/health', (req, res) => {
   console.log('Health check requested');
   res.json({ status: 'ok' });
+});
+
+// Reload data from storage (useful after seeding)
+app.post('/api/reload', (req, res) => {
+  try {
+    console.log('Reloading data from storage...');
+    const freshData = loadWardrobeData();
+    wardrobeItems = freshData.items;
+    outfitGenerationClicks = freshData.outfitGenerationClicks;
+    lastClickResetDate = freshData.lastClickResetDate;
+    userProfile = freshData.userProfile || {};
+    
+    console.log(`Reloaded ${wardrobeItems.length} items from storage`);
+    res.json({ 
+      message: 'Data reloaded successfully',
+      itemsCount: wardrobeItems.length,
+      clicksUsed: outfitGenerationClicks
+    });
+  } catch (error) {
+    console.error('Error reloading data:', error);
+    res.status(500).json({ error: 'Failed to reload data' });
+  }
 });
 
 // Get all wardrobe items
@@ -137,28 +179,44 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
       return res.status(400).json({ error: 'No photo uploaded' });
     }
 
-    const { title } = req.body;
+    const { title, category, description, measurements } = req.body;
+    
     if (!title) {
       console.error('Title is missing');
       return res.status(400).json({ error: 'Title is required' });
     }
 
+    if (!category) {
+      console.error('Category is missing');
+      return res.status(400).json({ error: 'Category is required' });
+    }
+
     console.log(`Processing item: "${title}"`);
+    console.log(`  Category: ${category}`);
     console.log(`  File: ${req.file.originalname} (${(req.file.size / 1024).toFixed(2)} KB)`);
 
     const imageUrl = `/uploads/${req.file.filename}`;
-    const imagePath = req.file.path;
-
-    // Use LLM to categorize the item
-    console.log('Calling LLM to categorize item...');
-    const category = await categorizeItem(title, imagePath);
-    console.log(`Item categorized as: ${category}`);
+    
+    // Parse measurements if provided
+    let parsedMeasurements: WardrobeItem['measurements'] = undefined;
+    if (measurements) {
+      try {
+        parsedMeasurements = typeof measurements === 'string' 
+          ? JSON.parse(measurements) 
+          : measurements;
+        console.log('  Measurements:', parsedMeasurements);
+      } catch (e) {
+        console.warn('Failed to parse measurements, continuing without them');
+      }
+    }
 
     const newItem: WardrobeItem = {
       id: uuidv4(),
       title,
       imageUrl,
       category,
+      description: description || undefined,
+      measurements: parsedMeasurements,
       createdAt: new Date().toISOString()
     };
 
@@ -231,9 +289,10 @@ app.post('/api/outfits/generate', async (req, res) => {
       });
     }
 
-    // Generate outfits using LLM
+    // Generate outfits using LLM with user profile and item descriptions
     console.log('Calling LLM to generate outfit combinations...');
-    const outfits = await generateOutfits(itemsByCategory);
+    console.log(`User profile: Height ${userProfile.height || 'N/A'} ${userProfile.heightUnit || ''}, Weight ${userProfile.weight || 'N/A'} ${userProfile.weightUnit || ''}`);
+    const outfits = await generateOutfits(itemsByCategory, userProfile);
     console.log(`Generated ${outfits.length} outfit combinations`);
     
     outfitGenerationClicks++;
@@ -300,6 +359,43 @@ app.delete('/api/items/:id', (req, res) => {
   saveItems(wardrobeItems);
   
   res.json({ message: 'Item deleted successfully' });
+});
+
+// Get user profile
+app.get('/api/user/profile', (req, res) => {
+  console.log('Fetching user profile');
+  res.json(userProfile);
+});
+
+// Update user profile
+app.post('/api/user/profile', (req, res) => {
+  try {
+    const { height, weight, heightUnit, weightUnit } = req.body;
+    
+    userProfile = {
+      height: height ? Number(height) : undefined,
+      weight: weight ? Number(weight) : undefined,
+      heightUnit: heightUnit || 'inches',
+      weightUnit: weightUnit || 'lbs'
+    };
+    
+    console.log('Updated user profile:', userProfile);
+    saveUserProfile(userProfile);
+    
+    res.json(userProfile);
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    res.status(500).json({ error: 'Failed to update user profile' });
+  }
+});
+
+// Get available categories
+app.get('/api/categories', (req, res) => {
+  const categories = [
+    'Tops', 'Bottoms', 'Dresses', 'Outerwear', 'Shoes', 
+    'Accessories', 'Bags', 'Jewelry', 'Activewear', 'Underwear'
+  ];
+  res.json(categories);
 });
 
 app.listen(PORT, () => {

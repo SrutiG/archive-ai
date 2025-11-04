@@ -96,21 +96,46 @@ export async function categorizeItem(title: string, imagePath: string): Promise<
 }
 
 export async function generateOutfits(
-  itemsByCategory: Record<string, WardrobeItem[]>
+  itemsByCategory: Record<string, WardrobeItem[]>,
+  userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string }
 ): Promise<string[][]> {
   try {
     console.log('[LLM] Starting outfit generation...');
     
-    // Build a description of available items
+    // Build a detailed description of available items with descriptions
     const itemsDescription = Object.entries(itemsByCategory)
-      .map(([category, items]) => 
-        `${category}: ${items.map(item => item.title).join(', ')}`
-      )
+      .map(([category, items]) => {
+        const itemsList = items.map(item => {
+          let itemDesc = item.title;
+          if (item.description) {
+            itemDesc += ` (${item.description})`;
+          }
+          if (item.measurements) {
+            const measurementsStr = Object.entries(item.measurements)
+              .filter(([_, v]) => v !== undefined && v !== null)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(', ');
+            if (measurementsStr) {
+              itemDesc += ` [${measurementsStr}]`;
+            }
+          }
+          return itemDesc;
+        }).join(', ');
+        return `${category}: ${itemsList}`;
+      })
       .join('\n');
     
     const totalItems = Object.values(itemsByCategory).flat().length;
     console.log(`[LLM] Generating outfits from ${totalItems} items across ${Object.keys(itemsByCategory).length} categories`);
     console.log(`[LLM] Items description length: ${itemsDescription.length} characters`);
+    
+    // Build user profile context
+    let userContext = '';
+    if (userProfile) {
+      if (userProfile.height && userProfile.weight) {
+        userContext = `User profile: Height ${userProfile.height} ${userProfile.heightUnit || 'inches'}, Weight ${userProfile.weight} ${userProfile.weightUnit || 'lbs'}. `;
+      }
+    }
 
     console.log('[LLM] Calling OpenAI API for outfit generation...');
     const startTime = Date.now();
@@ -127,7 +152,7 @@ export async function generateOutfits(
         },
         {
           role: 'user',
-          content: `Generate outfit combinations from these items:\n${itemsDescription}\n\nReturn a JSON object with an "outfits" key containing an array of arrays with item titles.`
+          content: `${userContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations. Return a JSON object with an "outfits" key containing an array of arrays with item titles.`
         }
       ],
       max_tokens: 500,

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "clear-data": "ts-node src/scripts/clearData.ts",
+    "seed-data": "ts-node src/scripts/seedData.ts"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +28,7 @@
     "@types/node": "^20.10.5",
     "@types/uuid": "^9.0.7",
     "typescript": "^5.3.3",
-    "ts-node-dev": "^2.0.0"
+    "ts-node-dev": "^2.0.0",
+    "ts-node": "^10.9.2"
   }
 }

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { WardrobeItem } from './index';
+import { WardrobeItem, UserProfile } from './index';
 
 const DATA_FILE = path.join(__dirname, '../data/wardrobe.json');
 const DATA_DIR = path.join(__dirname, '../data');
@@ -9,6 +9,7 @@ export interface WardrobeData {
   items: WardrobeItem[];
   outfitGenerationClicks: number;
   lastClickResetDate: string;
+  userProfile?: UserProfile;
 }
 
 function ensureDataDir() {
@@ -22,7 +23,8 @@ function getDefaultData(): WardrobeData {
   return {
     items: [],
     outfitGenerationClicks: 0,
-    lastClickResetDate: new Date().toDateString()
+    lastClickResetDate: new Date().toDateString(),
+    userProfile: {}
   };
 }
 
@@ -89,6 +91,12 @@ export function saveOutfitClicks(clicks: number, lastResetDate: string): void {
   const currentData = loadWardrobeData();
   currentData.outfitGenerationClicks = clicks;
   currentData.lastClickResetDate = lastResetDate;
+  saveWardrobeData(currentData);
+}
+
+export function saveUserProfile(profile: UserProfile): void {
+  const currentData = loadWardrobeData();
+  currentData.userProfile = profile;
   saveWardrobeData(currentData);
 }
 
