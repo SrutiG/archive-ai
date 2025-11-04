@@ -3,13 +3,31 @@ import './App.css';
 import ItemInput from './components/ItemInput';
 import ItemList from './components/ItemList';
 import OutfitGenerator from './components/OutfitGenerator';
+import UserProfile from './components/UserProfile';
 
 export interface WardrobeItem {
   id: string;
   title: string;
   imageUrl: string;
   category: string;
+  description?: string;
+  measurements?: {
+    size?: string;
+    waist?: number;
+    inseam?: number;
+    chest?: number;
+    length?: number;
+    shoeSize?: string;
+    [key: string]: string | number | undefined;
+  };
   createdAt: string;
+}
+
+export interface UserProfile {
+  height?: number;
+  weight?: number;
+  heightUnit?: 'inches' | 'cm';
+  weightUnit?: 'lbs' | 'kg';
 }
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
@@ -31,7 +49,19 @@ function App() {
   };
 
   useEffect(() => {
-    fetchItems();
+    // Reload data from storage on mount to ensure fresh data (useful after seeding)
+    const reloadAndFetch = async () => {
+      try {
+        console.log('Reloading data from storage...');
+        await fetch(`${API_BASE_URL}/api/reload`, { method: 'POST' });
+        fetchItems();
+      } catch (error) {
+        console.error('Error reloading on mount:', error);
+        // If reload fails, just fetch items normally
+        fetchItems();
+      }
+    };
+    reloadAndFetch();
   }, []);
 
   const handleItemAdded = () => {
@@ -42,6 +72,17 @@ function App() {
     fetchItems();
   };
 
+  const handleReload = async () => {
+    try {
+      // Reload data on backend first
+      await fetch(`${API_BASE_URL}/api/reload`, { method: 'POST' });
+      // Then refresh items
+      fetchItems();
+    } catch (error) {
+      console.error('Error reloading data:', error);
+    }
+  };
+
   return (
     <div className="App">
       <header className="App-header">
@@ -50,6 +91,8 @@ function App() {
       </header>
       
       <main className="App-main">
+        <UserProfile apiUrl={API_BASE_URL} />
+        
         <ItemInput 
           onItemAdded={handleItemAdded} 
           loading={loading}
