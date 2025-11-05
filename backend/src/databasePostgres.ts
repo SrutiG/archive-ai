@@ -40,6 +40,8 @@ const pool = new Pool({
   max: poolSize, // Reduced for shared pooler to avoid exhausting the pool
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 15000, // Increased timeout for initial connection (pooler may need more time)
+  // Allow the pool to remove idle clients that have been closed by the server
+  allowExitOnIdle: false,
   // Force IPv4 connection (Render doesn't support IPv6)
   // This will be handled by the connection string format
 });
@@ -48,15 +50,29 @@ if (DATABASE_URL?.includes('shared')) {
   console.log(`📊 Using shared pooler with reduced connection pool (max: ${poolSize}) to avoid exhausting Supabase pooler`);
 }
 
-// Handle pool errors
-pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-  process.exit(-1);
+// Handle pool errors gracefully
+// Don't exit on connection termination - Supabase pooler may close idle connections
+pool.on('error', (err: any) => {
+  // Log the error but don't crash the app
+  // Connection termination (XX000) is normal for Supabase poolers
+  if (err?.code === 'XX000' || err?.message?.includes('shutdown') || err?.message?.includes('termination')) {
+    console.warn('⚠️  Database connection terminated (this is normal for Supabase poolers):', err.message);
+    // The pool will automatically reconnect on the next query
+  } else {
+    console.error('❌ Database pool error:', err);
+    // Only exit on critical errors, not connection issues
+    if (err?.code === 'ENOSPC' || err?.severity === 'FATAL') {
+      console.error('💥 Critical database error - exiting');
+      process.exit(-1);
+    }
+  }
 });
 
-// Helper function to execute queries
-async function query(text: string, params?: any[]): Promise<QueryResult> {
+// Helper function to execute queries with automatic retry on connection termination
+async function query(text: string, params?: any[], retryCount = 0): Promise<QueryResult> {
   const start = Date.now();
+  const maxRetries = 2;
+  
   try {
     const res = await pool.query(text, params);
     const duration = Date.now() - start;
@@ -65,6 +81,16 @@ async function query(text: string, params?: any[]): Promise<QueryResult> {
     }
     return res;
   } catch (error: any) {
+    // Retry on connection termination errors (Supabase pooler closes idle connections)
+    if ((error?.code === 'XX000' || 
+         error?.message?.includes('shutdown') || 
+         error?.message?.includes('termination')) && 
+        retryCount < maxRetries) {
+      console.warn(`⚠️  Connection terminated, retrying query (attempt ${retryCount + 1}/${maxRetries})...`);
+      // Wait a bit before retrying to allow connection to be re-established
+      await new Promise(resolve => setTimeout(resolve, 100 * (retryCount + 1)));
+      return query(text, params, retryCount + 1);
+    }
     console.error('Database query error:', error);
     console.error('Query:', text);
     console.error('Params:', params);

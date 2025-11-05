@@ -14,16 +14,20 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
   const { currentUser } = useUser();
   const [profile, setProfile] = useState<UserProfile>({});
   const [loading, setLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   const fetchProfile = async () => {
+    setProfileLoading(true);
     try {
       const response = await apiGet('/api/user/profile');
       const data = await response.json();
       setProfile(data);
     } catch (err) {
       console.error('Error fetching profile:', err);
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -65,7 +69,13 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
         description="Add your measurements and style preferences to help generate better-fitting and personalized outfit combinations"
       />
 
-      <form onSubmit={handleSubmit} className="profile-form">
+      {profileLoading ? (
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p className="loading-text">Loading your profile...</p>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="profile-form">
         <div className="form-section">
           <SectionHeader title="Basic Measurements" />
           <div className="profile-grid">
@@ -324,6 +334,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
           {loading ? 'Saving...' : 'Save Profile'}
         </Button>
       </form>
+      )}
     </div>
   );
 };

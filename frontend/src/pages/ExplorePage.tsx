@@ -26,6 +26,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [suggestions, setSuggestions] = useState<ExploreSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const [_shouldUpdate, setShouldUpdate] = useState(false);
@@ -64,6 +65,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
       
       // Auto-generate suggestions on first visit if none exist today
       const autoGenerate = async () => {
+        setSuggestionsLoading(true);
         try {
           const response = await apiGet('/api/explore/suggestions');
           const data = await response.json();
@@ -81,6 +83,8 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
         } catch (error) {
           console.error('Error checking suggestions:', error);
           setLoading(false);
+        } finally {
+          setSuggestionsLoading(false);
         }
       };
       
@@ -140,19 +144,22 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
 
       {error && <div className="error-message">{error}</div>}
 
-      {loading && (
-        <div className="loading-state">
-          <p>Generating personalized recommendations based on your wardrobe...</p>
+      {(loading || suggestionsLoading) && (
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p className="loading-text">
+            {loading ? 'Generating personalized recommendations...' : 'Loading suggestions...'}
+          </p>
         </div>
       )}
 
-      {!loading && suggestions.length === 0 && (
+      {!loading && !suggestionsLoading && suggestions.length === 0 && (
         <div className="empty-state">
           <p>No suggestions yet. Click "Refresh" to generate personalized recommendations.</p>
         </div>
       )}
 
-      {suggestions.length > 0 && (
+      {!loading && !suggestionsLoading && suggestions.length > 0 && (
         <div className="suggestions-grid">
           {suggestions.map((suggestion) => (
             <div key={suggestion.id} className="suggestion-card">
