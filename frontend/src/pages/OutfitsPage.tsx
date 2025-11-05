@@ -47,6 +47,9 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   const [generatedOutfits, setGeneratedOutfits] = useState<GeneratedOutfit[]>([]);
   const [savedOutfits, setSavedOutfits] = useState<SavedOutfit[]>([]);
   const [loading, setLoading] = useState(false);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [savedOutfitsLoading, setSavedOutfitsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState('');
   const [status, setStatus] = useState<OutfitStatus | null>(null);
@@ -75,16 +78,20 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   }, [currentUser?.id]);
 
   const fetchItems = async () => {
+    setItemsLoading(true);
     try {
       const response = await apiGet('/api/items');
       const data = await response.json();
       setItems(data);
     } catch (error) {
       console.error('Error fetching items:', error);
+    } finally {
+      setItemsLoading(false);
     }
   };
 
   const fetchSavedOutfits = async () => {
+    setSavedOutfitsLoading(true);
     try {
       const response = await apiGet('/api/outfits/saved');
       const data = await response.json();
@@ -96,16 +103,21 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
     } catch (error) {
       console.error('Error fetching saved outfits:', error);
       setSavedOutfits([]);
+    } finally {
+      setSavedOutfitsLoading(false);
     }
   };
 
   const fetchStatus = async () => {
+    setStatusLoading(true);
     try {
       const response = await apiGet('/api/outfits/status');
       const data = await response.json();
       setStatus(data);
     } catch (err) {
       console.error('Error fetching status:', err);
+    } finally {
+      setStatusLoading(false);
     }
   };
 
@@ -315,74 +327,84 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
         description="Generate personalized outfit combinations based on your wardrobe and style preferences"
       />
 
-      <div className="generate-section">
-        <SectionHeader title="Outfit Generator" />
-        <div className="generate-form">
-          <div className="form-group">
-            <label htmlFor="selectedItems">Build Outfit Around Specific Items (Optional, max 3)</label>
-            <ItemAutocomplete
-              items={items}
-              selectedItems={selectedItems}
-              onItemsChange={setSelectedItems}
-              maxItems={3}
-              disabled={loading}
-              apiUrl={apiUrl}
-            />
-            <small>Select up to 3 items to build outfits around. All item details (description, measurements) will be included in the generation context.</small>
+      {(itemsLoading || statusLoading) ? (
+        <div className="generate-section">
+          <SectionHeader title="Outfit Generator" />
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p className="loading-text">Loading your wardrobe...</p>
           </div>
-
-          <div className="form-group">
-            <label htmlFor="prompt">Additional Context (Optional)</label>
-            <textarea
-              id="prompt"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g., 'Temperature: 65°F, Occasion: casual dinner, Mood: relaxed and comfortable'"
-              rows={3}
-              disabled={loading}
-              className="prompt-textarea"
-            />
-            <small>Add details about weather, occasion, mood, or any specific requirements</small>
-          </div>
-
-          {status && (
-            <div className="status-badge">
-              <span>
-                {status.remaining} / {status.maxClicks} clicks remaining today
-              </span>
-            </div>
-          )}
-
-          {!canGenerate ? (
-            <div className="info-message">
-              <p>
-                {categoryCount < 2
-                  ? 'Need at least 2 different categories to generate outfits.'
-                  : 'Add at least 2 items to generate outfits.'}
-              </p>
-              <p className="current-stats">
-                Current: {items.length} items in {categoryCount} categories
-              </p>
-            </div>
-          ) : (
-            <Button
-              variant="primary"
-              size="medium"
-              onClick={handleGenerate}
-              disabled={loading || (status?.remaining ?? 0) <= 0}
-              className="generate-btn"
-            >
-              {loading
-                ? 'Generating Outfits...'
-                : status?.remaining === 0
-                ? 'Daily Limit Reached'
-                : 'Generate 5 Outfits'}
-            </Button>
-          )}
-
-          {error && <div className="error-message">{error}</div>}
         </div>
-      </div>
+      ) : (
+        <div className="generate-section">
+          <SectionHeader title="Outfit Generator" />
+          <div className="generate-form">
+            <div className="form-group">
+              <label htmlFor="selectedItems">Build Outfit Around Specific Items (Optional, max 3)</label>
+              <ItemAutocomplete
+                items={items}
+                selectedItems={selectedItems}
+                onItemsChange={setSelectedItems}
+                maxItems={3}
+                disabled={loading}
+                apiUrl={apiUrl}
+              />
+              <small>Select up to 3 items to build outfits around. All item details (description, measurements) will be included in the generation context.</small>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="prompt">Additional Context (Optional)</label>
+              <textarea
+                id="prompt"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="e.g., 'Temperature: 65°F, Occasion: casual dinner, Mood: relaxed and comfortable'"
+                rows={3}
+                disabled={loading}
+                className="prompt-textarea"
+              />
+              <small>Add details about weather, occasion, mood, or any specific requirements</small>
+            </div>
+
+            {status && (
+              <div className="status-badge">
+                <span>
+                  {status.remaining} / {status.maxClicks} clicks remaining today
+                </span>
+              </div>
+            )}
+
+            {!canGenerate ? (
+              <div className="info-message">
+                <p>
+                  {categoryCount < 2
+                    ? 'Need at least 2 different categories to generate outfits.'
+                    : 'Add at least 2 items to generate outfits.'}
+                </p>
+                <p className="current-stats">
+                  Current: {items.length} items in {categoryCount} categories
+                </p>
+              </div>
+            ) : (
+              <Button
+                variant="primary"
+                size="medium"
+                onClick={handleGenerate}
+                disabled={loading || (status?.remaining ?? 0) <= 0}
+                className="generate-btn"
+              >
+                {loading
+                  ? 'Generating Outfits...'
+                  : status?.remaining === 0
+                  ? 'Daily Limit Reached'
+                  : 'Generate 5 Outfits'}
+              </Button>
+            )}
+
+            {error && <div className="error-message">{error}</div>}
+          </div>
+        </div>
+      )}
 
       {generatedOutfits.length > 0 && (
         <div className="generated-outfits-section">
@@ -486,7 +508,15 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
         outfitItems={feedbackModalOutfit}
       />
 
-      {savedOutfits.length > 0 && (
+      {savedOutfitsLoading ? (
+        <div className="saved-outfits-section">
+          <SectionHeader title="Saved Outfits" />
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p className="loading-text">Loading saved outfits...</p>
+          </div>
+        </div>
+      ) : savedOutfits.length > 0 && (
         <div className="saved-outfits-section">
           <SectionHeader title={`Saved Outfits (${savedOutfits.length})`} />
           <div className="outfits-list">

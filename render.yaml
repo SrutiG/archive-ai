@@ -2,6 +2,7 @@ services:
   - type: web
     name: wardrobe-app-backend
     env: node
+    region: oregon
     rootDir: backend
     buildCommand: npm install && npm run build
     startCommand: npm start
@@ -9,13 +10,17 @@ services:
       - key: NODE_ENV
         value: production
       - key: PORT
-        sync: false  # Render sets this automatically
+        sync: false
       - key: OPENAI_API_KEY
-        sync: false  # Set this in Render dashboard
+        sync: false
       - key: PEXELS_API_KEY
-        sync: false  # Optional - set this in Render dashboard
-    disk:
-      name: wardrobe-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
-
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        sync: false
+        value: wardrobe-images
