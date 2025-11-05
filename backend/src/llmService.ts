@@ -372,12 +372,7 @@ export async function generateOutfits(
         console.error('[LLM] Parse error details:', parseError.message);
       }
       console.log('[LLM] Using fallback outfit generation');
-      const fallbackOutfits = generateFallbackOutfits(itemsByCategory);
-      outfits = fallbackOutfits.map(items => ({
-        items,
-        justification: 'This combination creates a stylish and cohesive look.',
-        stylingSuggestions: []
-      }));
+      outfits = generateFallbackOutfits(itemsByCategory);
     }
 
     // Validate and filter outfits
@@ -397,12 +392,7 @@ export async function generateOutfits(
 
     if (outfits.length === 0) {
       console.log('[LLM] No valid outfits generated, using fallback');
-      const fallbackOutfits = generateFallbackOutfits(itemsByCategory);
-      return fallbackOutfits.map(items => ({
-        items,
-        justification: 'This combination creates a stylish and cohesive look.',
-        stylingSuggestions: []
-      }));
+      return generateFallbackOutfits(itemsByCategory);
     }
     
     console.log(`[LLM] Successfully generated ${outfits.length} outfit combinations`);
@@ -591,9 +581,9 @@ export async function generateExploreSuggestions(
 
 function generateFallbackOutfits(
   itemsByCategory: Record<string, WardrobeItem[]>
-): string[][] {
+): GeneratedOutfit[] {
   console.log('[LLM] Generating fallback outfits...');
-  const outfits: string[][] = [];
+  const outfits: GeneratedOutfit[] = [];
   const categories = Object.keys(itemsByCategory);
   
   if (categories.length < 2) {
@@ -610,10 +600,14 @@ function generateFallbackOutfits(
     const items2 = itemsByCategory[category2];
     
     if (items1.length > 0 && items2.length > 0) {
-      outfits.push([
-        items1[0].title,
-        items2[0].title
-      ]);
+      outfits.push({
+        items: [
+          items1[0].title,
+          items2[0].title
+        ],
+        justification: `A simple combination of ${category1} and ${category2}`,
+        stylingSuggestions: ['Pair these items together for a casual look.']
+      });
     }
   }
   
