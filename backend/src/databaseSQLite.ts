@@ -114,6 +114,7 @@ const stmts = {
   getUserById: db.prepare('SELECT * FROM users WHERE id = ?'),
   getAllUsers: db.prepare('SELECT * FROM users ORDER BY created_at'),
   createUser: db.prepare('INSERT INTO users (id, name, created_at) VALUES (?, ?, ?)'),
+  deleteUser: db.prepare('DELETE FROM users WHERE id = ?'),
   
   // User data
   getUserData: db.prepare('SELECT * FROM user_data WHERE user_id = ?'),
@@ -184,6 +185,11 @@ export function createUser(id: string, name: string, createdAt: string) {
   });
   transaction();
   return { id, name, createdAt };
+}
+
+export function deleteUser(userId: string) {
+  // CASCADE will automatically delete all related data (items, outfits, feedback, etc.)
+  stmts.deleteUser.run(userId);
 }
 
 export function getUserData(userId: string) {

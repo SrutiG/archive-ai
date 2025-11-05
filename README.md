@@ -363,8 +363,8 @@ For manual API testing with a running server:
 cd backend
 npm run dev  # In one terminal
 
-# Run PostgreSQL connection test (in another terminal)
-./test-postgres.sh
+# Run integration tests (in another terminal)
+npm test
 ```
 
 ### Database Scripts

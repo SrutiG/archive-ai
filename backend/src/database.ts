@@ -14,6 +14,10 @@ let sqliteDb: any = null;
 if (USE_POSTGRES) {
   console.log('📊 Using PostgreSQL database');
   pgDb = require('./databasePostgres');
+  // Log connection info after module is loaded (ensures logs show up in Render)
+  if (pgDb && typeof pgDb.logConnectionInfo === 'function') {
+    pgDb.logConnectionInfo();
+  }
 } else {
   console.log('📊 Using SQLite database (local development)');
   sqliteDb = require('./databaseSQLite');
@@ -46,6 +50,13 @@ export async function createUser(id: string, name: string, createdAt: string) {
     return pgDb.createUser(id, name, createdAt);
   }
   return Promise.resolve(sqliteDb.createUser(id, name, createdAt));
+}
+
+export async function deleteUser(userId: string) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.deleteUser(userId);
+  }
+  return Promise.resolve(sqliteDb.deleteUser(userId));
 }
 
 export async function getUserData(userId: string) {

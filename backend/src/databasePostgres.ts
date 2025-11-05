@@ -9,18 +9,44 @@ const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!DATABASE_URL) {
   console.warn('⚠️  DATABASE_URL not set. Database operations will fail.');
+} else {
+  // Log connection info (without password)
+  const safeUrl = DATABASE_URL.replace(/:[^:@]+@/, ':****@');
+  console.log('📊 Database URL (masked):', safeUrl);
+  
+  // Check connection type
+  if (DATABASE_URL.includes('.pooler.supabase.com')) {
+    if (DATABASE_URL.includes(':6543/')) {
+      console.log('✅ Using connection pooler (Transaction mode, port 6543) - recommended for Render');
+    } else if (DATABASE_URL.includes(':5432/')) {
+      console.log('✅ Using connection pooler (Session mode, port 5432)');
+      console.warn('⚠️  Session mode pooler may have connection limits. If you see ECONNREFUSED, try Transaction mode (port 6543)');
+    }
+  } else if (DATABASE_URL.includes(':5432/')) {
+    console.warn('⚠️  Using direct connection port 5432. This may be blocked by Supabase firewall.');
+    console.warn('⚠️  Consider using connection pooler (port 6543 or 5432 with pooler hostname)');
+  } else if (DATABASE_URL.includes(':6543/')) {
+    console.log('✅ Using connection pooler (port 6543) - recommended for Render');
+  }
 }
 
 // Create connection pool with IPv4 preference
+// For shared pooler with limited pool size, reduce max connections to avoid exhausting the pool
+const poolSize = DATABASE_URL?.includes('shared') ? 5 : 10; // Reduce for shared pooler
+
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: DATABASE_URL?.includes('supabase') ? { rejectUnauthorized: false } : undefined,
-  max: 10, // Maximum number of clients in the pool
+  max: poolSize, // Reduced for shared pooler to avoid exhausting the pool
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000, // Increased timeout for initial connection
+  connectionTimeoutMillis: 15000, // Increased timeout for initial connection (pooler may need more time)
   // Force IPv4 connection (Render doesn't support IPv6)
   // This will be handled by the connection string format
 });
+
+if (DATABASE_URL?.includes('shared')) {
+  console.log(`📊 Using shared pooler with reduced connection pool (max: ${poolSize}) to avoid exhausting Supabase pooler`);
+}
 
 // Handle pool errors
 pool.on('error', (err) => {
@@ -38,10 +64,42 @@ async function query(text: string, params?: any[]): Promise<QueryResult> {
       console.warn(`Slow query (${duration}ms): ${text.substring(0, 100)}`);
     }
     return res;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Database query error:', error);
     console.error('Query:', text);
     console.error('Params:', params);
+    
+    // Provide helpful error messages for common connection issues
+    if (error?.code === 'ECONNREFUSED') {
+      console.error('\n❌ CONNECTION REFUSED ERROR');
+      console.error('The database server is refusing connections. This could mean:');
+      console.error('1. The connection string is incorrect');
+      console.error('2. The database host/port is wrong');
+      console.error('3. Network restrictions are blocking the connection');
+      console.error('4. Supabase pooler is exhausted (all connections in use)');
+      console.error('5. Password contains special characters that need URL encoding');
+      console.error('\nCurrent connection (masked):', DATABASE_URL?.replace(/:[^:@]+@/, ':****@'));
+      
+      if (DATABASE_URL?.includes('shared')) {
+        console.error('\n⚠️  You are using a SHARED pooler with limited pool size.');
+        console.error('The pool might be exhausted. Try:');
+        console.error('- Reduce max connections in the app (already set to 5 for shared pooler)');
+        console.error('- Upgrade to a dedicated pooler in Supabase');
+        console.error('- Use Transaction mode (port 6543) instead of Session mode (port 5432)');
+        console.error('- Check Supabase dashboard for pooler usage and limits');
+      }
+      
+      console.error('\nFor Render, use Supabase Connection Pooling:');
+      console.error('- Go to Supabase Dashboard → Settings → Database → Connection Pooling');
+      console.error('- Try Transaction mode (port 6543) instead of Session mode (port 5432)');
+      console.error('- Consider upgrading to dedicated pooler if using shared pooler');
+      console.error('- Make sure password is URL-encoded if it contains special characters');
+    } else if (error?.code === 'ENETUNREACH') {
+      console.error('\n❌ NETWORK UNREACHABLE ERROR');
+      console.error('This is likely an IPv6 connection issue. Render does not support IPv6.');
+      console.error('Make sure your DATABASE_URL uses a hostname (not IPv6 address).');
+    }
+    
     throw error;
   }
 }
@@ -168,6 +226,11 @@ export async function createUser(id: string, name: string, createdAt: string) {
   } finally {
     client.release();
   }
+}
+
+export async function deleteUser(userId: string) {
+  // CASCADE will automatically delete all related data (items, outfits, feedback, etc.)
+  await query('DELETE FROM users WHERE id = $1', [userId]);
 }
 
 export async function getUserData(userId: string) {
@@ -431,6 +494,37 @@ export async function upsertExploreUpdate(userId: string, lastUpdate: string) {
 // Close database connection pool (call on shutdown)
 export async function closeDatabase() {
   await pool.end();
+}
+
+// Log connection info (called after module loads to ensure logs appear in Render)
+export function logConnectionInfo() {
+  if (!DATABASE_URL) {
+    console.warn('⚠️  DATABASE_URL not set. Database operations will fail.');
+    return;
+  }
+  
+  // Log connection info (without password)
+  const safeUrl = DATABASE_URL.replace(/:[^:@]+@/, ':****@');
+  console.log('📊 Database URL (masked):', safeUrl);
+  
+  // Check connection type
+  if (DATABASE_URL.includes('.pooler.supabase.com')) {
+    if (DATABASE_URL.includes(':6543/')) {
+      console.log('✅ Using connection pooler (Transaction mode, port 6543) - recommended for Render');
+    } else if (DATABASE_URL.includes(':5432/')) {
+      console.log('✅ Using connection pooler (Session mode, port 5432)');
+      console.warn('⚠️  Session mode pooler may have connection limits. If you see ECONNREFUSED, try Transaction mode (port 6543)');
+    }
+  } else if (DATABASE_URL.includes(':5432/')) {
+    console.warn('⚠️  Using direct connection port 5432. This may be blocked by Supabase firewall.');
+    console.warn('⚠️  Consider using connection pooler (port 6543 or 5432 with pooler hostname)');
+  } else if (DATABASE_URL.includes(':6543/')) {
+    console.log('✅ Using connection pooler (port 6543) - recommended for Render');
+  }
+  
+  if (DATABASE_URL.includes('shared')) {
+    console.log(`📊 Using shared pooler with reduced connection pool (max: ${poolSize}) to avoid exhausting Supabase pooler`);
+  }
 }
 
 // Export pool for migrations

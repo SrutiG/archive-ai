@@ -12,7 +12,8 @@
     "seed-data": "ts-node src/scripts/seedData.ts",
     "migrate-supabase": "ts-node src/scripts/migrateToSupabase.ts",
     "migrate-postgres": "ts-node src/scripts/migrateToPostgres.ts",
-    "verify-supabase": "ts-node verify-supabase-setup.ts"
+    "verify-supabase": "ts-node verify-supabase-setup.ts",
+    "delete-test-users": "ts-node src/scripts/deleteTestUsers.ts"
   },
   "keywords": [],
   "author": "",

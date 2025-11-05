@@ -21,26 +21,9 @@ export async function createTestUser(name: string = 'TestUser'): Promise<TestUse
  */
 export async function cleanupTestUser(userId: string): Promise<void> {
   try {
-    // Delete all user data
-    const items = await db.getItemsByUser(userId);
-    for (const item of items) {
-      await db.deleteItem(item.id);
-    }
-    
-    const savedOutfits = await db.getSavedOutfits(userId);
-    for (const outfit of savedOutfits) {
-      await db.deleteSavedOutfit(outfit.id);
-    }
-    
-    const feedback = await db.getFeedback(userId);
-    for (const fb of feedback) {
-      await db.deleteFeedback(fb.id);
-    }
-    
-    await db.deleteExploreSuggestions(userId);
-    
-    // Note: User deletion would cascade, but we'll just clean up data
-    // The user record itself can remain for now
+    // Delete the user - CASCADE will automatically delete all related data
+    // (items, outfits, feedback, explore suggestions, profiles, etc.)
+    await db.deleteUser(userId);
   } catch (error) {
     console.error(`Error cleaning up test user ${userId}:`, error);
   }
