@@ -13,6 +13,17 @@ import * as supabaseStorage from './supabaseStorage';
 if (process.env.DATABASE_URL && typeof db.initializeSchema === 'function') {
   db.initializeSchema().catch(err => {
     console.error('Failed to initialize PostgreSQL schema:', err);
+    if (err instanceof Error && err.message.includes('ENETUNREACH')) {
+      console.error('\n⚠️  CONNECTION ERROR: This looks like an IPv6 connection issue.');
+      console.error('Render does not support IPv6 connections to PostgreSQL.');
+      console.error('Please use an IPv4 connection string from Supabase.');
+      console.error('\nTo fix this:');
+      console.error('1. Go to Supabase Dashboard → Settings → Database');
+      console.error('2. Look for "Connection string" or "Connection pooling"');
+      console.error('3. Use the IPv4 connection string (not IPv6)');
+      console.error('4. It should look like: postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres');
+      console.error('5. Make sure it uses a hostname (db.xxxxx.supabase.co) not an IPv6 address');
+    }
   });
 }
 

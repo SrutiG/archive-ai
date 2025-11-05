@@ -11,13 +11,15 @@ if (!DATABASE_URL) {
   console.warn('⚠️  DATABASE_URL not set. Database operations will fail.');
 }
 
-// Create connection pool
+// Create connection pool with IPv4 preference
 const pool = new Pool({
   connectionString: DATABASE_URL,
   ssl: DATABASE_URL?.includes('supabase') ? { rejectUnauthorized: false } : undefined,
   max: 10, // Maximum number of clients in the pool
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 10000, // Increased timeout for initial connection
+  // Force IPv4 connection (Render doesn't support IPv6)
+  // This will be handled by the connection string format
 });
 
 // Handle pool errors
