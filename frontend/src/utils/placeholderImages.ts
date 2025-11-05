@@ -23,6 +23,12 @@ export const getPlaceholderImage = (category: string): string => {
  */
 export const getItemImageUrl = (item: { imageUrl?: string; category: string }, apiUrl: string): string => {
   if (item.imageUrl) {
+    // If imageUrl is already a full URL (http:// or https://), use it directly
+    // This handles Supabase Storage URLs and other external URLs
+    if (item.imageUrl.startsWith('http://') || item.imageUrl.startsWith('https://')) {
+      return item.imageUrl;
+    }
+    // Otherwise, prepend apiUrl for local paths like /uploads/filename.png
     return `${apiUrl}${item.imageUrl}`;
   }
   return getPlaceholderImage(item.category);

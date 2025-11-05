@@ -60,7 +60,11 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
   // But don't show preview until image successfully loads (to avoid showing placeholders)
   useEffect(() => {
     if (item.imageUrl) {
-      const imgUrl = `${apiUrl}${item.imageUrl}`;
+      // If imageUrl is already a full URL (http:// or https://), use it directly
+      // Otherwise, prepend apiUrl for local paths
+      const imgUrl = (item.imageUrl.startsWith('http://') || item.imageUrl.startsWith('https://'))
+        ? item.imageUrl
+        : `${apiUrl}${item.imageUrl}`;
       setPreview(imgUrl);
       setPreviewLoaded(false); // Reset loaded state when imageUrl changes
       
