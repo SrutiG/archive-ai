@@ -31,7 +31,9 @@ services:
     region: oregon
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    startCommand: npm start
     envVars:
       - key: VITE_API_URL
+        sync: false
+      - key: PORT
         sync: false
