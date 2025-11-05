@@ -24,3 +24,14 @@ services:
       - key: SUPABASE_STORAGE_BUCKET
         sync: false
         value: wardrobe-images
+
+  - type: web
+    name: wardrobe-app-frontend
+    env: node
+    region: oregon
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
