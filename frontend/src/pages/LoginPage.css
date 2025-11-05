@@ -146,3 +146,43 @@
   cursor: not-allowed;
 }
 
+@media (max-width: 768px) {
+  .LoginPage {
+    padding: 1rem;
+    align-items: flex-start;
+    padding-top: 2rem;
+  }
+  
+  .login-container {
+    padding: 2rem 1.5rem;
+    max-width: 100%;
+  }
+  
+  .login-title {
+    font-size: 2rem;
+  }
+  
+  .login-subtitle {
+    font-size: 0.75rem;
+  }
+  
+  .login-section {
+    margin-bottom: 1.5rem;
+  }
+  
+  .user-button {
+    padding: 0.875rem;
+    font-size: 0.8125rem;
+  }
+  
+  .login-input {
+    padding: 0.875rem;
+    font-size: 0.875rem;
+  }
+  
+  .login-submit {
+    padding: 0.875rem;
+    font-size: 0.875rem;
+  }
+}
+

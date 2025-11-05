@@ -38,6 +38,54 @@
   letter-spacing: 0.05em;
 }
 
+@media (max-width: 768px) {
+  .ExplorePage {
+    max-width: 100%;
+    margin: 0;
+    padding: 2rem 1.5rem 3rem 1.5rem;
+  }
+  
+  .suggestions-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  
+  .suggestion-card {
+    width: 100%;
+  }
+  
+  /* Override PageHeader actions for mobile - stack vertically */
+  .ExplorePage .ds-page-header__actions {
+    position: static !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: 0.75rem !important;
+    margin-top: 1rem;
+    width: 100%;
+  }
+  
+  .last-update {
+    text-align: left;
+    width: 100%;
+  }
+  
+  .refresh-btn {
+    width: 100%;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.75rem;
+  }
+  
+  .loading-container {
+    padding: 3rem 1rem;
+    min-height: 200px;
+  }
+  
+  .empty-state {
+    padding: 3rem 1rem;
+  }
+}
+
 /* .ExplorePage h1 uses global page-header styles */
 
 .explore-header {
@@ -286,23 +334,4 @@
   color: #fff;
 }
 
-@media (max-width: 768px) {
-  .explore-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .header-actions {
-    width: 100%;
-    align-items: stretch;
-  }
-
-  .refresh-btn {
-    width: 100%;
-  }
-
-  .suggestions-grid {
-    grid-template-columns: 1fr;
-  }
-}
 

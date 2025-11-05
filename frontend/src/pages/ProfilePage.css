@@ -192,3 +192,50 @@
   margin-bottom: 1rem;
   border-radius: 0;
 }
+
+@media (max-width: 768px) {
+  .ProfilePage {
+    max-width: 100%;
+    margin: 0;
+    padding: 2rem 1.5rem 3rem 1.5rem;
+  }
+  
+  .profile-form {
+    padding-top: 1rem;
+    margin-top: 1rem;
+  }
+  
+  .form-section {
+    margin-bottom: 2rem;
+  }
+  
+  .profile-grid {
+    gap: 1.5rem;
+  }
+  
+  .form-group {
+    max-width: 100%;
+  }
+  
+  .input-with-unit {
+    max-width: 100%;
+  }
+  
+  .input-with-unit input {
+    max-width: 100%;
+  }
+  
+  .form-group input[type="text"] {
+    max-width: 100%;
+  }
+  
+  .loading-container {
+    padding: 3rem 1rem;
+    min-height: 200px;
+  }
+  
+  .save-btn {
+    width: 100%;
+    min-width: auto;
+  }
+}

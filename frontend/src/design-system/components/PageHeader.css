@@ -32,3 +32,29 @@
   gap: var(--spacing-4);
 }
 
+@media (max-width: 768px) {
+  .ds-page-header {
+    margin-bottom: var(--spacing-3);
+    padding-bottom: var(--spacing-3);
+  }
+  
+  .ds-page-header__actions {
+    position: static;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    margin-top: var(--spacing-2);
+    gap: var(--spacing-2);
+  }
+  
+  .ds-page-header__content .ds-heading--h1 {
+    font-size: 1.75rem;
+    margin-bottom: var(--spacing-1);
+  }
+  
+  .ds-page-header__description {
+    font-size: 0.875rem;
+    margin-top: var(--spacing-1);
+  }
+}
+

@@ -40,3 +40,16 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+@media (max-width: 768px) {
+  .WardrobePage {
+    max-width: 100%;
+    margin: 0;
+    padding: 2rem 1.5rem 3rem 1.5rem;
+  }
+  
+  .loading-container {
+    padding: 3rem 1rem;
+    min-height: 200px;
+  }
+}

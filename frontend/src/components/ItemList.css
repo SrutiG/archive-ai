@@ -214,14 +214,23 @@
 }
 
 @media (max-width: 768px) {
+  .ItemList {
+    padding: 1.5rem 1rem 2rem 1rem;
+  }
+  
   .items-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: 1fr;
     gap: 1.5rem;
   }
   
   .ItemList-header {
     flex-direction: column;
     align-items: flex-start;
+    margin-bottom: 2rem;
+  }
+  
+  .item-card {
+    width: 100%;
   }
   
   /* Stack buttons when card width is narrow enough that buttons would wrap */
@@ -233,5 +242,14 @@
   .delete-btn {
     width: 100%;
     flex: none;
+  }
+  
+  .category-section {
+    padding-bottom: 2rem;
+  }
+  
+  .category-title {
+    font-size: 1.25rem;
+    margin-bottom: 1.5rem;
   }
 }

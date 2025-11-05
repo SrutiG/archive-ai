@@ -26,6 +26,14 @@ body {
   background: #fff;
 }
 
+@media (max-width: 768px) {
+  .App-main {
+    margin-left: 0;
+    width: 100%;
+    margin-top: 60px;
+  }
+}
+
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Playfair Display', serif;
   font-weight: 700;
@@ -47,6 +55,22 @@ h2 {
 h3 {
   font-size: 1.25rem;
   letter-spacing: 0.02em;
+}
+
+@media (max-width: 768px) {
+  h1 {
+    font-size: 1.75rem;
+    margin-bottom: 0.75rem;
+  }
+  
+  h2 {
+    font-size: 1.5rem;
+    margin-bottom: 0.625rem;
+  }
+  
+  h3 {
+    font-size: 1.125rem;
+  }
 }
 
 .App-loading {
@@ -125,17 +149,3 @@ input:focus, textarea:focus, select:focus {
   box-shadow: none;
 }
 
-@media (max-width: 768px) {
-  .App-main {
-    margin-left: 200px;
-    width: calc(100% - 200px);
-  }
-  
-  h1 {
-    font-size: 2rem;
-  }
-  
-  h2 {
-    font-size: 1.5rem;
-  }
-}
