@@ -22,25 +22,14 @@ app.use(express.static(distPath, {
   fallthrough: true, // Continue to next middleware if file not found
 }));
 
-// Handle React Router - serve index.html for all non-API routes
-// This catch-all handles all routes that don't match static files
-// Use app.use to handle all HTTP methods (GET, POST, PUT, DELETE, etc.)
-app.use((req, res, next) => {
+// Handle React Router - serve index.html for all GET requests that don't match static files
+// This catch-all MUST be last and use app.get('*') to catch all routes
+// Express static middleware with fallthrough:true will call next() if file not found,
+// allowing this catch-all to handle routes like /outfits, /wardrobe, etc.
+app.get('*', (req, res) => {
   // Skip API routes
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'API endpoint not found' });
-  }
-
-  // Only handle GET requests for serving HTML (other methods shouldn't hit this)
-  if (req.method !== 'GET') {
-    return next();
-  }
-
-  // Skip requests for actual static files (they should have been served already)
-  // But if they reach here, they don't exist, so return 404
-  const fileExtension = path.extname(req.path);
-  if (fileExtension && fileExtension !== '.html') {
-    return res.status(404).send('File not found');
   }
 
   // Check if index.html exists before sending
@@ -64,6 +53,8 @@ app.use((req, res, next) => {
   }, (err) => {
     if (err) {
       console.error('Error sending index.html:', err);
+      console.error('Request path:', req.path);
+      console.error('Index path:', indexPath);
       if (!res.headersSent) {
         res.status(500).send('Error loading application');
       }
