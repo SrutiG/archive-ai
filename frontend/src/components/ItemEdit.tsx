@@ -4,6 +4,7 @@ import { WardrobeItem } from '../App';
 import { SectionHeader, Button } from '../design-system';
 import { getMeasurementFields, Measurements as MeasurementsType } from '../utils/measurementFields';
 import { useCamera } from '../hooks/useCamera';
+import { apiGet, apiUpload } from '../utils/api';
 
 interface ItemEditProps {
   item: WardrobeItem;
@@ -21,6 +22,7 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
   const [categories, setCategories] = useState<string[]>([]);
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [previewLoaded, setPreviewLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [measurements, setMeasurements] = useState<Measurements>(item.measurements || {});
@@ -48,16 +50,41 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
 
   // Fetch categories on mount
   useEffect(() => {
-    fetch(`${apiUrl}/api/categories`)
+    apiGet('/api/categories')
       .then(res => res.json())
       .then(data => setCategories(data))
       .catch(err => console.error('Error fetching categories:', err));
-  }, [apiUrl]);
+  }, []);
 
-  // Set initial preview to existing image
+  // Set initial preview to existing image only if it exists
+  // But don't show preview until image successfully loads (to avoid showing placeholders)
   useEffect(() => {
     if (item.imageUrl) {
-      setPreview(`${apiUrl}${item.imageUrl}`);
+      const imgUrl = `${apiUrl}${item.imageUrl}`;
+      setPreview(imgUrl);
+      setPreviewLoaded(false); // Reset loaded state when imageUrl changes
+      
+      // Test if image loads successfully
+      const img = new Image();
+      img.onload = () => {
+        // Only show preview if image is larger than 1x1 (likely not a placeholder)
+        if (img.width > 1 && img.height > 1) {
+          setPreviewLoaded(true);
+        } else {
+          setPreview(null);
+          setPreviewLoaded(false);
+        }
+      };
+      img.onerror = () => {
+        // Image failed to load, don't show preview
+        setPreview(null);
+        setPreviewLoaded(false);
+      };
+      img.src = imgUrl;
+    } else {
+      // Clear preview if no image exists
+      setPreview(null);
+      setPreviewLoaded(false);
     }
   }, [item.imageUrl, apiUrl]);
 
@@ -69,6 +96,7 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreview(reader.result as string);
+        setPreviewLoaded(true); // User-selected photos always show
       };
       reader.readAsDataURL(file);
     }
@@ -78,6 +106,7 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
     startCapture((file: File, dataUrl: string) => {
       setPhoto(file);
       setPreview(dataUrl);
+      setPreviewLoaded(true); // Camera photos always show
       setError(null);
       closeCamera();
     });
@@ -128,10 +157,7 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
         formData.append('measurements', JSON.stringify(measurements));
       }
 
-      const response = await fetch(`${apiUrl}/api/items/${item.id}`, {
-        method: 'PUT',
-        body: formData,
-      });
+      const response = await apiUpload(`/api/items/${item.id}`, formData, 'PUT');
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -291,22 +317,39 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
             </div>
           )}
 
-          {preview && !isCameraOpen && (
+          {preview && previewLoaded && !isCameraOpen && (
             <div className="preview-container">
-              <img src={preview} alt="Preview" className="preview-image" />
+              <img 
+                src={preview} 
+                alt="Preview" 
+                className="preview-image"
+                onError={() => {
+                  // If preview image fails to load, hide preview
+                  setPreview(null);
+                  setPreviewLoaded(false);
+                }}
+              />
               <Button
                 type="button"
                 variant="secondary"
                 size="small"
                 onClick={() => {
-                  setPreview(photo ? null : `${apiUrl}${item.imageUrl}`);
-                  setPhoto(null);
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = '';
+                  if (photo) {
+                    // Remove new photo selection
+                    setPreview(null);
+                    setPreviewLoaded(false);
+                    setPhoto(null);
+                    if (fileInputRef.current) {
+                      fileInputRef.current.value = '';
+                    }
+                  } else {
+                    // Remove existing photo
+                    setPreview(null);
+                    setPreviewLoaded(false);
                   }
                 }}
               >
-                {photo ? 'Remove New Photo' : 'Keep Current Photo'}
+                {photo ? 'Remove New Photo' : 'Remove Photo'}
               </Button>
             </div>
           )}

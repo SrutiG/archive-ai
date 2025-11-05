@@ -5,6 +5,8 @@ import FeedbackModal from '../components/FeedbackModal';
 import ItemAutocomplete from '../components/ItemAutocomplete';
 import { PageHeader, SectionHeader, Button } from '../design-system';
 import { getItemImageUrl, getPlaceholderImage } from '../utils/placeholderImages';
+import { apiGet, apiPost, apiDelete } from '../utils/api';
+import { useUser } from '../contexts/UserContext';
 
 interface OutfitsPageProps {
   apiUrl: string;
@@ -40,6 +42,7 @@ interface OutfitFeedback {
 }
 
 const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
+  const { currentUser } = useUser();
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [generatedOutfits, setGeneratedOutfits] = useState<GeneratedOutfit[]>([]);
   const [savedOutfits, setSavedOutfits] = useState<SavedOutfit[]>([]);
@@ -58,15 +61,22 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   const [selectedItems, setSelectedItems] = useState<WardrobeItem[]>([]);
 
   useEffect(() => {
-    fetchItems();
-    fetchSavedOutfits();
-    fetchStatus();
-    fetchFeedback();
-  }, []);
+    if (currentUser) {
+      fetchItems();
+      fetchSavedOutfits();
+      fetchStatus();
+      fetchFeedback();
+      // Clear generated outfits when switching users
+      setGeneratedOutfits([]);
+      setLikedOutfitIndices(new Set());
+      setSelectedItems([]);
+      setPrompt('');
+    }
+  }, [currentUser?.id]);
 
   const fetchItems = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/items`);
+      const response = await apiGet('/api/items');
       const data = await response.json();
       setItems(data);
     } catch (error) {
@@ -76,7 +86,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
 
   const fetchSavedOutfits = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/outfits/saved`);
+      const response = await apiGet('/api/outfits/saved');
       const data = await response.json();
       // Ensure data is an array and each outfit has itemTitles
       const outfits = (Array.isArray(data) ? data : []).filter((outfit: any) => 
@@ -91,7 +101,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
 
   const fetchStatus = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/outfits/status`);
+      const response = await apiGet('/api/outfits/status');
       const data = await response.json();
       setStatus(data);
     } catch (err) {
@@ -104,15 +114,9 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
     setError(null);
 
     try {
-      const response = await fetch(`${apiUrl}/api/outfits/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          prompt: prompt.trim() || undefined,
-          selectedItemIds: selectedItems.map(item => item.id)
-        }),
+      const response = await apiPost('/api/outfits/generate', { 
+        prompt: prompt.trim() || undefined,
+        selectedItemIds: selectedItems.map(item => item.id)
       });
 
       const data = await response.json();
@@ -160,15 +164,9 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   const handleSaveOutfit = async (outfit: GeneratedOutfit, index: number) => {
     setSavingOutfitId(index);
     try {
-      const response = await fetch(`${apiUrl}/api/outfits/save`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          itemTitles: outfit.items || [],
-          prompt: prompt || undefined,
-        }),
+      const response = await apiPost('/api/outfits/save', {
+        itemTitles: outfit.items || [],
+        prompt: prompt || undefined,
       });
 
       if (!response.ok) {
@@ -201,7 +199,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
 
   const fetchFeedback = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/outfits/feedback`);
+      const response = await apiGet('/api/outfits/feedback');
       const data = await response.json();
       setFeedback(data);
     } catch (error) {
@@ -220,17 +218,11 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
     if (feedbackModalIndex === null) return;
 
     try {
-      const response = await fetch(`${apiUrl}/api/outfits/feedback`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          itemTitles: feedbackModalOutfit,
-          type: feedbackModalType,
-          feedback: feedbackText.trim() || undefined,
-          prompt: prompt || undefined,
-        }),
+      const response = await apiPost('/api/outfits/feedback', {
+        itemTitles: feedbackModalOutfit,
+        type: feedbackModalType,
+        feedback: feedbackText.trim() || undefined,
+        prompt: prompt || undefined,
       });
 
       if (!response.ok) {
@@ -274,9 +266,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
     }
 
     try {
-      const response = await fetch(`${apiUrl}/api/outfits/feedback/${id}`, {
-        method: 'DELETE',
-      });
+      const response = await apiDelete(`/api/outfits/feedback/${id}`);
 
       if (!response.ok) {
         throw new Error('Failed to delete feedback');
@@ -294,9 +284,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
     }
 
     try {
-      const response = await fetch(`${apiUrl}/api/outfits/saved/${id}`, {
-        method: 'DELETE',
-      });
+      const response = await apiDelete(`/api/outfits/saved/${id}`);
 
       if (!response.ok) {
         throw new Error('Failed to delete outfit');

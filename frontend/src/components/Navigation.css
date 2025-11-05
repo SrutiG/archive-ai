@@ -65,6 +65,113 @@
   border-left-color: #000;
 }
 
+.nav-user {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #333;
+  position: relative;
+}
+
+.nav-user-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.nav-user-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-user-toggle {
+  background: transparent;
+  border: 1px solid #666;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.nav-user-toggle:hover {
+  background: #111;
+  border-color: #fff;
+}
+
+.nav-user-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: #000;
+  border: 1px solid #333;
+  border-bottom: none;
+  margin-bottom: 1px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 1001;
+}
+
+.nav-user-option {
+  width: 100%;
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: background 0.2s;
+}
+
+.nav-user-option:hover {
+  background: #111;
+}
+
+.nav-user-option.active {
+  background: #fff;
+  color: #000;
+  font-weight: 500;
+}
+
+.nav-user-option.active:hover {
+  background: #fff;
+}
+
+.nav-user-divider {
+  height: 1px;
+  background: #333;
+  margin: 0.5rem 0;
+}
+
+.nav-user-logout {
+  color: #fff;
+  font-weight: 400;
+}
+
+.nav-user-logout:hover {
+  background: #111;
+  color: #fff;
+}
+
 @media (max-width: 768px) {
   .Navigation {
     width: 200px;

@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
+import { UserProvider, useUser } from './contexts/UserContext';
 import Navigation from './components/Navigation';
+import LoginPage from './pages/LoginPage';
 import ProfilePage from './pages/ProfilePage';
 import WardrobePage from './pages/WardrobePage';
 import OutfitsPage from './pages/OutfitsPage';
@@ -46,19 +48,22 @@ export interface UserProfile {
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
-function App() {
-  useEffect(() => {
-    // Reload data from storage on mount to ensure fresh data (useful after seeding)
-    const reloadData = async () => {
-      try {
-        console.log('Reloading data from storage...');
-        await fetch(`${API_BASE_URL}/api/reload`, { method: 'POST' });
-      } catch (error) {
-        console.error('Error reloading on mount:', error);
-      }
-    };
-    reloadData();
-  }, []);
+const AppContent: React.FC = () => {
+  const { currentUser, isLoading } = useUser();
+
+  // Show loading state while checking for user
+  if (isLoading) {
+    return (
+      <div className="App-loading">
+        <div className="loading-spinner"></div>
+      </div>
+    );
+  }
+
+  // Show login page if no user is selected
+  if (!currentUser) {
+    return <LoginPage />;
+  }
 
   return (
     <Router>
@@ -76,6 +81,14 @@ function App() {
         </main>
       </div>
     </Router>
+  );
+};
+
+function App() {
+  return (
+    <UserProvider>
+      <AppContent />
+    </UserProvider>
   );
 }
 

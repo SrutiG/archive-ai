@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import './ExplorePage.css';
 import { WardrobeItem } from '../App';
 import { PageHeader, Button, Text } from '../design-system';
+import { apiGet, apiPost } from '../utils/api';
+import { useUser } from '../contexts/UserContext';
 
 interface ExplorePageProps {
   apiUrl: string;
@@ -20,6 +22,7 @@ interface ExploreSuggestion {
 }
 
 const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
+  const { currentUser } = useUser();
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [suggestions, setSuggestions] = useState<ExploreSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,12 +37,10 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
     try {
       // Use force refresh endpoint if manually triggered
       const endpoint = forceRefresh 
-        ? `${apiUrl}/api/explore/generate?force=true`
-        : `${apiUrl}/api/explore/generate`;
+        ? '/api/explore/generate?force=true'
+        : '/api/explore/generate';
       
-      const response = await fetch(endpoint, {
-        method: 'POST',
-      });
+      const response = await apiPost(endpoint);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -58,36 +59,38 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
   };
 
   useEffect(() => {
-    fetchItems();
-    
-    // Auto-generate suggestions on first visit if none exist today
-    const autoGenerate = async () => {
-      try {
-        const response = await fetch(`${apiUrl}/api/explore/suggestions`);
-        const data = await response.json();
-        
-        // If no suggestions exist or should update, auto-generate
-        if (!data.suggestions || data.suggestions.length === 0 || data.shouldUpdate) {
-          setLoading(true);
-          await handleGenerate(false);
-        } else {
-          // Load existing suggestions
-          setSuggestions(data.suggestions || []);
-          setLastUpdate(data.lastUpdate || '');
-          setShouldUpdate(data.shouldUpdate || false);
+    if (currentUser) {
+      fetchItems();
+      
+      // Auto-generate suggestions on first visit if none exist today
+      const autoGenerate = async () => {
+        try {
+          const response = await apiGet('/api/explore/suggestions');
+          const data = await response.json();
+          
+          // If no suggestions exist or should update, auto-generate
+          if (!data.suggestions || data.suggestions.length === 0 || data.shouldUpdate) {
+            setLoading(true);
+            await handleGenerate(false);
+          } else {
+            // Load existing suggestions
+            setSuggestions(data.suggestions || []);
+            setLastUpdate(data.lastUpdate || '');
+            setShouldUpdate(data.shouldUpdate || false);
+          }
+        } catch (error) {
+          console.error('Error checking suggestions:', error);
+          setLoading(false);
         }
-      } catch (error) {
-        console.error('Error checking suggestions:', error);
-        setLoading(false);
-      }
-    };
-    
-    autoGenerate();
-  }, []);
+      };
+      
+      autoGenerate();
+    }
+  }, [currentUser?.id]);
 
   const fetchItems = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/items`);
+      const response = await apiGet('/api/items');
       const data = await response.json();
       setItems(data);
     } catch (error) {
@@ -97,7 +100,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
 
   const fetchSuggestions = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/explore/suggestions`);
+      const response = await apiGet('/api/explore/suggestions');
       const data = await response.json();
       setSuggestions(data.suggestions || []);
       setLastUpdate(data.lastUpdate || '');

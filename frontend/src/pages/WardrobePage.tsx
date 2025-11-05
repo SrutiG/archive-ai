@@ -4,19 +4,22 @@ import { WardrobeItem } from '../App';
 import ItemInput from '../components/ItemInput';
 import ItemList from '../components/ItemList';
 import { PageHeader } from '../design-system';
+import { apiGet, apiPost } from '../utils/api';
+import { useUser } from '../contexts/UserContext';
 
 interface WardrobePageProps {
   apiUrl: string;
 }
 
 const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
+  const { currentUser } = useUser();
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchItems = async () => {
     try {
       console.log('Fetching items from API...');
-      const response = await fetch(`${apiUrl}/api/items`);
+      const response = await apiGet('/api/items');
       const data = await response.json();
       console.log(`Fetched ${data.length} items:`, data.map((item: WardrobeItem) => `${item.title} (${item.id})`));
       setItems(data);
@@ -26,19 +29,21 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
   };
 
   useEffect(() => {
-    // Reload data from storage on mount
+    // Reload data from storage on mount or when user changes
     const reloadAndFetch = async () => {
       try {
         console.log('Reloading data from storage...');
-        await fetch(`${apiUrl}/api/reload`, { method: 'POST' });
+        await apiPost('/api/reload');
         fetchItems();
       } catch (error) {
         console.error('Error reloading on mount:', error);
         fetchItems();
       }
     };
-    reloadAndFetch();
-  }, []);
+    if (currentUser) {
+      reloadAndFetch();
+    }
+  }, [currentUser?.id]);
 
   const handleItemAdded = () => {
     fetchItems();

@@ -3,6 +3,7 @@ import './ItemInput.css';
 import { SectionHeader, Button } from '../design-system';
 import { getMeasurementFields, Measurements as MeasurementsType } from '../utils/measurementFields';
 import { useCamera } from '../hooks/useCamera';
+import { apiGet, apiUpload } from '../utils/api';
 
 interface ItemInputProps {
   onItemAdded: () => void;
@@ -46,11 +47,11 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
 
   // Fetch categories on mount
   useEffect(() => {
-    fetch(`${apiUrl}/api/categories`)
+    apiGet('/api/categories')
       .then(res => res.json())
       .then(data => setCategories(data))
       .catch(err => console.error('Error fetching categories:', err));
-  }, [apiUrl]);
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -102,17 +103,14 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
       return;
     }
 
-    if (!photo) {
-      setError('Please take or select a photo');
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
     try {
       const formData = new FormData();
-      formData.append('photo', photo);
+      if (photo) {
+        formData.append('photo', photo);
+      }
       formData.append('title', title);
       formData.append('category', category);
       if (description.trim()) {
@@ -122,10 +120,7 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
         formData.append('measurements', JSON.stringify(measurements));
       }
 
-      const response = await fetch(`${apiUrl}/api/items`, {
-        method: 'POST',
-        body: formData,
-      });
+      const response = await apiUpload('/api/items', formData);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -221,7 +216,7 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
         )}
 
         <div className="form-group">
-          <label>Photo *</label>
+          <label>Photo (Optional)</label>
           <div className="photo-options">
             {!isCameraOpen && (
               <>
@@ -319,7 +314,7 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
           type="submit"
           variant="primary"
           size="medium"
-          disabled={loading || !title.trim() || !category || !photo}
+          disabled={loading || !title.trim() || !category}
         >
           {loading ? 'Adding...' : 'Add Item'}
         </Button>

@@ -4,6 +4,7 @@ import { WardrobeItem } from '../App';
 import ItemEdit from './ItemEdit';
 import { Heading } from '../design-system';
 import { getItemImageUrl, getPlaceholderImage } from '../utils/placeholderImages';
+import { apiDelete } from '../utils/api';
 
 interface ItemListProps {
   items: WardrobeItem[];
@@ -24,9 +25,7 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
 
     setDeletingId(id);
     try {
-      const response = await fetch(`${apiUrl}/api/items/${id}`, {
-        method: 'DELETE',
-      });
+      const response = await apiDelete(`/api/items/${id}`);
 
       if (!response.ok) {
         throw new Error('Failed to delete item');

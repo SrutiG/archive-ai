@@ -6,7 +6,7 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import { generateOutfits, generateExploreSuggestions } from './llmService';
-import { loadWardrobeData, saveItems, saveOutfitClicks, saveUserProfile, saveOutfits, saveFeedback, saveExploreSuggestions } from './storage';
+import * as db from './database';
 
 dotenv.config();
 
@@ -140,29 +140,46 @@ export interface ExploreSuggestion {
   createdAt: string;
 }
 
-// Load data from storage on startup
-const initialData = loadWardrobeData();
-let wardrobeItems: WardrobeItem[] = initialData.items;
-let outfitGenerationClicks = initialData.outfitGenerationClicks;
-let userProfile: UserProfile = initialData.userProfile || {};
-let savedOutfits: SavedOutfit[] = initialData.savedOutfits || [];
-let outfitFeedback: OutfitFeedback[] = initialData.outfitFeedback || [];
-let exploreSuggestions: ExploreSuggestion[] = initialData.exploreSuggestions || [];
-let lastExploreUpdate: string = initialData.lastExploreUpdate || '';
+// Multi-user data storage
 const MAX_OUTFIT_CLICKS_PER_DAY = 10;
-let lastClickResetDate = initialData.lastClickResetDate;
 
-console.log(`Loaded ${wardrobeItems.length} items from persistent storage`);
-console.log(`Outfit generation clicks: ${outfitGenerationClicks}`);
+// Helper function to get user data from SQLite
+function getUserData(userId: string) {
+  const userDataRecord = db.getUserData(userId);
+  const items = db.getItemsByUser(userId);
+  const profile = db.getProfile(userId);
+  const savedOutfits = db.getSavedOutfits(userId);
+  const outfitFeedback = db.getFeedback(userId);
+  const exploreSuggestions = db.getExploreSuggestions(userId);
+  const lastExploreUpdate = db.getExploreUpdate(userId);
+  
+  return {
+    items,
+    outfitGenerationClicks: userDataRecord?.outfit_generation_clicks || 0,
+    lastClickResetDate: userDataRecord?.last_click_reset_date || new Date().toDateString(),
+    userProfile: profile || {},
+    savedOutfits,
+    outfitFeedback,
+    exploreSuggestions,
+    lastExploreUpdate: lastExploreUpdate || ''
+  };
+}
+
+// Middleware to extract user ID from request
+function getUserFromRequest(req: any): string {
+  const userId = req.headers['x-user-id'] || req.query.userId || 'default-user';
+  return userId as string;
+}
+
+console.log('Multi-user wardrobe app initialized');
 
 // Reset click counter if it's a new day
-function resetClickCounterIfNeeded() {
+function resetClickCounterIfNeeded(userId: string) {
+  const userData = getUserData(userId);
   const today = new Date().toDateString();
-  if (today !== lastClickResetDate) {
-    console.log(`Day changed: Resetting outfit generation clicks from ${outfitGenerationClicks} to 0`);
-    outfitGenerationClicks = 0;
-    lastClickResetDate = today;
-    saveOutfitClicks(outfitGenerationClicks, lastClickResetDate);
+  if (today !== userData.lastClickResetDate) {
+    console.log(`Day changed for user ${userId}: Resetting outfit generation clicks from ${userData.outfitGenerationClicks} to 0`);
+    db.updateUserData(userId, 0, today);
   }
 }
 
@@ -172,25 +189,60 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// User management endpoints
+app.get('/api/users', (req, res) => {
+  try {
+    const users = db.getAllUsers();
+    console.log(`Returning ${users.length} users`);
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+app.post('/api/users', (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'User name is required' });
+    }
+    
+    const id = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const createdAt = new Date().toISOString();
+    const newUser = db.createUser(id, name, createdAt);
+    res.status(201).json(newUser);
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ error: 'Failed to create user' });
+  }
+});
+
+app.get('/api/users/:userId', (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = db.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
 // Reload data from storage (useful after seeding)
 app.post('/api/reload', (req, res) => {
   try {
-    console.log('Reloading data from storage...');
-    const freshData = loadWardrobeData();
-    wardrobeItems = freshData.items;
-    outfitGenerationClicks = freshData.outfitGenerationClicks;
-    lastClickResetDate = freshData.lastClickResetDate;
-    userProfile = freshData.userProfile || {};
-    savedOutfits = freshData.savedOutfits || [];
-    outfitFeedback = freshData.outfitFeedback || [];
-    exploreSuggestions = freshData.exploreSuggestions || [];
-    lastExploreUpdate = freshData.lastExploreUpdate || '';
-    
-    console.log(`Reloaded ${wardrobeItems.length} items from storage`);
+    console.log('Reloading data from database...');
+    const userId = getUserFromRequest(req);
+    const userData = getUserData(userId);
+    console.log(`Reloaded data for user ${userId}: ${userData.items.length} items`);
     res.json({ 
       message: 'Data reloaded successfully',
-      itemsCount: wardrobeItems.length,
-      clicksUsed: outfitGenerationClicks
+      itemsCount: userData.items.length,
+      clicksUsed: userData.outfitGenerationClicks
     });
   } catch (error) {
     console.error('Error reloading data:', error);
@@ -200,16 +252,20 @@ app.post('/api/reload', (req, res) => {
 
 // Get all wardrobe items
 app.get('/api/items', (req, res) => {
-  console.log(`Returning ${wardrobeItems.length} wardrobe items`);
-  wardrobeItems.forEach((item, index) => {
+  const userId = getUserFromRequest(req);
+  const userData = getUserData(userId);
+  console.log(`Returning ${userData.items.length} wardrobe items for user ${userId}`);
+  userData.items.forEach((item, index) => {
     console.log(`  Item ${index + 1}: "${item.title}" (ID: ${item.id}, Category: ${item.category})`);
   });
-  res.json(wardrobeItems);
+  res.json(userData.items);
 });
 
 // Get items grouped by category
 app.get('/api/items/by-category', (req, res) => {
-  const grouped = wardrobeItems.reduce((acc, item) => {
+  const userId = getUserFromRequest(req);
+  const userData = getUserData(userId);
+  const grouped = userData.items.reduce((acc, item) => {
     if (!acc[item.category]) {
       acc[item.category] = [];
     }
@@ -218,7 +274,7 @@ app.get('/api/items/by-category', (req, res) => {
   }, {} as Record<string, WardrobeItem[]>);
   
   const categoryCount = Object.keys(grouped).length;
-  console.log(`Returning items grouped by ${categoryCount} categories`);
+  console.log(`Returning items grouped by ${categoryCount} categories for user ${userId}`);
   res.json(grouped);
 });
 
@@ -227,11 +283,6 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
   try {
     console.log('Creating new wardrobe item...');
     
-    if (!req.file) {
-      console.error('No photo uploaded');
-      return res.status(400).json({ error: 'No photo uploaded' });
-    }
-
     const { title, category, description, measurements } = req.body;
     
     if (!title) {
@@ -246,9 +297,14 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
 
     console.log(`Processing item: "${title}"`);
     console.log(`  Category: ${category}`);
-    console.log(`  File: ${req.file.originalname} (${(req.file.size / 1024).toFixed(2)} KB)`);
+    if (req.file) {
+      console.log(`  File: ${req.file.originalname} (${(req.file.size / 1024).toFixed(2)} KB)`);
+    } else {
+      console.log(`  No photo provided - item will use category placeholder`);
+    }
 
-    const imageUrl = `/uploads/${req.file.filename}`;
+    // Only set imageUrl if a photo was uploaded
+    const imageUrl = req.file ? `/uploads/${req.file.filename}` : undefined;
     
     // Parse measurements if provided
     let parsedMeasurements: WardrobeItem['measurements'] = undefined;
@@ -266,30 +322,20 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
     const newItem: WardrobeItem = {
       id: uuidv4(),
       title,
-      imageUrl,
+      ...(imageUrl && { imageUrl }), // Only include imageUrl if it exists
       category,
       description: description || undefined,
       measurements: parsedMeasurements,
       createdAt: new Date().toISOString()
     };
 
-    // Log current items before adding
-    console.log(`Current items before adding: ${wardrobeItems.length}`);
-    wardrobeItems.forEach((item, index) => {
-      console.log(`  Item ${index + 1}: "${item.title}" (ID: ${item.id})`);
-    });
+    const userId = getUserFromRequest(req);
     
-    wardrobeItems.push(newItem);
-    console.log(`Item created successfully. Total items: ${wardrobeItems.length}`);
+    // Save to database
+    db.insertItem(newItem, userId);
+    
+    console.log(`Item created successfully for user ${userId}`);
     console.log(`New item ID: ${newItem.id}, Title: "${newItem.title}"`);
-
-    // Log all items after adding
-    wardrobeItems.forEach((item, index) => {
-      console.log(`  Item ${index + 1}: "${item.title}" (ID: ${item.id})`);
-    });
-
-    // Save to persistent storage
-    saveItems(wardrobeItems);
 
     res.status(201).json(newItem);
   } catch (error) {
@@ -305,20 +351,23 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
 // Generate outfit combinations
 app.post('/api/outfits/generate', async (req, res) => {
   try {
-    console.log('Generating outfit combinations...');
-    resetClickCounterIfNeeded();
+    const userId = getUserFromRequest(req);
+    const userData = getUserData(userId);
+    
+    console.log(`Generating outfit combinations for user ${userId}...`);
+    resetClickCounterIfNeeded(userId);
 
-    if (outfitGenerationClicks >= MAX_OUTFIT_CLICKS_PER_DAY) {
-      console.log(`Daily limit reached: ${outfitGenerationClicks}/${MAX_OUTFIT_CLICKS_PER_DAY} clicks used`);
+    if (userData.outfitGenerationClicks >= MAX_OUTFIT_CLICKS_PER_DAY) {
+      console.log(`Daily limit reached for user ${userId}: ${userData.outfitGenerationClicks}/${MAX_OUTFIT_CLICKS_PER_DAY} clicks used`);
       return res.status(429).json({ 
         error: 'Daily limit reached. Please try again tomorrow.',
-        clicksUsed: outfitGenerationClicks,
+        clicksUsed: userData.outfitGenerationClicks,
         maxClicks: MAX_OUTFIT_CLICKS_PER_DAY
       });
     }
 
     // Group items by category
-    const itemsByCategory = wardrobeItems.reduce((acc, item) => {
+    const itemsByCategory = userData.items.reduce((acc, item) => {
       if (!acc[item.category]) {
         acc[item.category] = [];
       }
@@ -328,14 +377,14 @@ app.post('/api/outfits/generate', async (req, res) => {
 
     // Check if we have enough items in different categories
     const categoryCount = Object.keys(itemsByCategory).length;
-    console.log(`Items grouped into ${categoryCount} categories`);
+    console.log(`Items grouped into ${categoryCount} categories for user ${userId}`);
     
     Object.entries(itemsByCategory).forEach(([category, items]) => {
       console.log(`  ${category}: ${items.length} items`);
     });
 
     if (categoryCount < 2) {
-      console.log(`Not enough categories: ${categoryCount} (need at least 2)`);
+      console.log(`Not enough categories for user ${userId}: ${categoryCount} (need at least 2)`);
       return res.status(400).json({ 
         error: 'Need at least 2 different categories to generate outfits',
         categories: categoryCount
@@ -351,7 +400,7 @@ app.post('/api/outfits/generate', async (req, res) => {
     // Get selected items if provided
     let selectedItems: WardrobeItem[] = [];
     if (selectedItemIds && Array.isArray(selectedItemIds) && selectedItemIds.length > 0) {
-      selectedItems = wardrobeItems.filter(item => selectedItemIds.includes(item.id));
+      selectedItems = userData.items.filter(item => selectedItemIds.includes(item.id));
       console.log(`Selected items for outfit generation: ${selectedItems.length} items`);
       selectedItems.forEach(item => {
         console.log(`  - ${item.title} (${item.category})`);
@@ -360,22 +409,23 @@ app.post('/api/outfits/generate', async (req, res) => {
 
     // Generate outfits using LLM with user profile and item descriptions
     console.log('Calling LLM to generate outfit combinations...');
+    const userProfile = userData.userProfile || {};
     console.log(`User profile: Height ${userProfile.height || 'N/A'} ${userProfile.heightUnit || ''}, Weight ${userProfile.weight || 'N/A'} ${userProfile.weightUnit || ''}`);
     if (userProfile.stylePreferences) {
       console.log(`Style preferences: ${userProfile.stylePreferences.substring(0, 100)}...`);
     }
-    const outfits = await generateOutfits(itemsByCategory, userProfile, prompt, outfitFeedback, selectedItems);
+    const outfits = await generateOutfits(itemsByCategory, userProfile, prompt, userData.outfitFeedback || [], selectedItems);
     console.log(`Generated ${outfits.length} outfit combinations`);
     
-    outfitGenerationClicks++;
-    console.log(`Outfit generation clicks: ${outfitGenerationClicks}/${MAX_OUTFIT_CLICKS_PER_DAY}`);
+    const newClicks = userData.outfitGenerationClicks + 1;
+    console.log(`Outfit generation clicks for user ${userId}: ${newClicks}/${MAX_OUTFIT_CLICKS_PER_DAY}`);
     
-    // Save to persistent storage
-    saveOutfitClicks(outfitGenerationClicks, lastClickResetDate);
+    // Save to database
+    db.updateUserData(userId, newClicks, userData.lastClickResetDate);
 
     res.json({
       outfits,
-      clicksUsed: outfitGenerationClicks,
+      clicksUsed: userData.outfitGenerationClicks,
       maxClicks: MAX_OUTFIT_CLICKS_PER_DAY
     });
   } catch (error) {
@@ -390,30 +440,31 @@ app.post('/api/outfits/generate', async (req, res) => {
 
 // Get outfit generation status
 app.get('/api/outfits/status', (req, res) => {
-  resetClickCounterIfNeeded();
+  const userId = getUserFromRequest(req);
+  resetClickCounterIfNeeded(userId);
+  const userData = getUserData(userId);
   const status = {
-    clicksUsed: outfitGenerationClicks,
+    clicksUsed: userData.outfitGenerationClicks,
     maxClicks: MAX_OUTFIT_CLICKS_PER_DAY,
-    remaining: MAX_OUTFIT_CLICKS_PER_DAY - outfitGenerationClicks
+    remaining: MAX_OUTFIT_CLICKS_PER_DAY - userData.outfitGenerationClicks
   };
-  console.log(`Outfit generation status: ${status.clicksUsed}/${status.maxClicks} clicks used, ${status.remaining} remaining`);
+  console.log(`Outfit generation status for user ${userId}: ${status.clicksUsed}/${status.maxClicks} clicks used, ${status.remaining} remaining`);
   res.json(status);
 });
 
 // Update an item
 app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
   try {
+    const userId = getUserFromRequest(req);
     const { id } = req.params;
-    console.log(`Updating item with ID: ${id}`);
+    console.log(`Updating item with ID: ${id} for user ${userId}`);
     
-    const itemIndex = wardrobeItems.findIndex(item => item.id === id);
+    const existingItem = db.getItemById(id);
     
-    if (itemIndex === -1) {
-      console.log(`Item not found: ${id}`);
+    if (!existingItem || existingItem.userId !== userId) {
+      console.log(`Item not found: ${id} for user ${userId}`);
       return res.status(404).json({ error: 'Item not found' });
     }
-
-    const existingItem = wardrobeItems[itemIndex];
     const { title, category, description, measurements } = req.body;
     
     if (!title) {
@@ -457,21 +508,17 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
       }
     }
 
-    // Update the item
-    const updatedItem: WardrobeItem = {
-      ...existingItem,
+    // Update the item in database
+    db.updateItem(id, {
       title,
       category,
       description: description || undefined,
       measurements: parsedMeasurements,
       imageUrl
-    };
+    });
 
-    wardrobeItems[itemIndex] = updatedItem;
-    console.log(`Item updated successfully: "${updatedItem.title}"`);
-
-    // Save to persistent storage
-    saveItems(wardrobeItems);
+    const updatedItem = db.getItemById(id);
+    console.log(`Item updated successfully for user ${userId}: "${updatedItem?.title}"`);
 
     res.json(updatedItem);
   } catch (error) {
@@ -486,57 +533,65 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
 
 // Delete an item
 app.delete('/api/items/:id', (req, res) => {
-  const { id } = req.params;
-  console.log(`Deleting item with ID: ${id}`);
-  
-  const itemIndex = wardrobeItems.findIndex(item => item.id === id);
-  
-  if (itemIndex === -1) {
-    console.log(`Item not found: ${id}`);
-    return res.status(404).json({ error: 'Item not found' });
-  }
-
-  const item = wardrobeItems[itemIndex];
-  console.log(`Deleting item: "${item.title}" (${item.category})`);
-  
-  // Delete the file if it exists
-  if (item.imageUrl) {
-    const filePath = path.join(__dirname, '../uploads', path.basename(item.imageUrl));
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      console.log(`Deleted file: ${filePath}`);
-    } else {
-      console.log(`File not found: ${filePath}`);
+  try {
+    const userId = getUserFromRequest(req);
+    const { id } = req.params;
+    console.log(`Deleting item with ID: ${id} for user ${userId}`);
+    
+    // Get item from database to check ownership and get imageUrl
+    const item = db.getItemById(id);
+    
+    if (!item || item.userId !== userId) {
+      console.log(`Item not found or not owned by user: ${id} for user ${userId}`);
+      return res.status(404).json({ error: 'Item not found' });
     }
-  } else {
-    console.log('No image file to delete (item has no imageUrl)');
-  }
 
-  wardrobeItems.splice(itemIndex, 1);
-  console.log(`Item deleted. Total items: ${wardrobeItems.length}`);
-  
-  // Save to persistent storage
-  saveItems(wardrobeItems);
-  
-  res.json({ message: 'Item deleted successfully' });
+    console.log(`Deleting item for user ${userId}: "${item.title}" (${item.category})`);
+    
+    // Delete the file if it exists
+    if (item.imageUrl) {
+      const filePath = path.join(__dirname, '../uploads', path.basename(item.imageUrl));
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`Deleted file: ${filePath}`);
+      } else {
+        console.log(`File not found: ${filePath}`);
+      }
+    } else {
+      console.log('No image file to delete (item has no imageUrl)');
+    }
+
+    // Delete from database
+    db.deleteItem(id);
+    console.log(`Item deleted for user ${userId}`);
+    
+    res.json({ message: 'Item deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting item:', error);
+    res.status(500).json({ error: 'Failed to delete item' });
+  }
 });
 
 // Get user profile
 app.get('/api/user/profile', (req, res) => {
-  console.log('Fetching user profile');
-  res.json(userProfile);
+  const userId = getUserFromRequest(req);
+  const userData = getUserData(userId);
+  console.log(`Fetching user profile for user ${userId}`);
+  res.json(userData.userProfile || {});
 });
 
 // Update user profile
 app.post('/api/user/profile', (req, res) => {
   try {
+    const userId = getUserFromRequest(req);
+    const userData = getUserData(userId);
     const { 
       height, weight, heightUnit, weightUnit, stylePreferences, brands,
       waist, chest, hips, inseam, shoeSize, measurementsUnit,
       hairColor, hairTexture, skinColor
     } = req.body;
     
-    userProfile = {
+    const updatedProfile: UserProfile = {
       height: height ? Number(height) : undefined,
       weight: weight ? Number(weight) : undefined,
       heightUnit: heightUnit || 'inches',
@@ -554,16 +609,17 @@ app.post('/api/user/profile', (req, res) => {
       skinColor: skinColor || undefined
     };
     
-    console.log('Updated user profile:', userProfile);
+    // Save to database
+    db.upsertProfile(userId, updatedProfile);
+    console.log(`Updated user profile for user ${userId}:`, updatedProfile);
     if (stylePreferences) {
       console.log(`Style preferences: ${stylePreferences.substring(0, 100)}...`);
     }
     if (hairColor || hairTexture || skinColor) {
       console.log(`Appearance: hairColor=${hairColor || 'N/A'}, hairTexture=${hairTexture || 'N/A'}, skinColor=${skinColor || 'N/A'}`);
     }
-    saveUserProfile(userProfile);
     
-    res.json(userProfile);
+    res.json(updatedProfile);
   } catch (error) {
     console.error('Error updating user profile:', error);
     res.status(500).json({ error: 'Failed to update user profile' });
@@ -581,13 +637,17 @@ app.get('/api/categories', (req, res) => {
 
 // Get saved outfits
 app.get('/api/outfits/saved', (req, res) => {
-  console.log(`Returning ${savedOutfits.length} saved outfits`);
-  res.json(savedOutfits);
+  const userId = getUserFromRequest(req);
+  const userData = getUserData(userId);
+  console.log(`Returning ${(userData.savedOutfits || []).length} saved outfits for user ${userId}`);
+  res.json(userData.savedOutfits || []);
 });
 
 // Save an outfit
 app.post('/api/outfits/save', (req, res) => {
   try {
+    const userId = getUserFromRequest(req);
+    const userData = getUserData(userId);
     const { itemTitles, prompt, notes } = req.body;
     
     if (!itemTitles || !Array.isArray(itemTitles) || itemTitles.length === 0) {
@@ -595,7 +655,7 @@ app.post('/api/outfits/save', (req, res) => {
     }
 
     // Validate that all items exist
-    const allItemTitles = wardrobeItems.map(item => item.title);
+    const allItemTitles = userData.items.map(item => item.title);
     const invalidTitles = itemTitles.filter((title: string) => !allItemTitles.includes(title));
     if (invalidTitles.length > 0) {
       return res.status(400).json({ 
@@ -612,10 +672,10 @@ app.post('/api/outfits/save', (req, res) => {
       notes: notes || undefined
     };
 
-    savedOutfits.push(newOutfit);
-    saveOutfits(savedOutfits);
+    // Save to database
+    db.insertSavedOutfit(userId, newOutfit);
     
-    console.log(`Saved outfit with ${itemTitles.length} items`);
+    console.log(`Saved outfit with ${itemTitles.length} items for user ${userId}`);
     res.status(201).json(newOutfit);
   } catch (error) {
     console.error('Error saving outfit:', error);
@@ -626,17 +686,24 @@ app.post('/api/outfits/save', (req, res) => {
 // Delete a saved outfit
 app.delete('/api/outfits/saved/:id', (req, res) => {
   try {
+    const userId = getUserFromRequest(req);
+    const userData = getUserData(userId);
     const { id } = req.params;
-    const outfitIndex = savedOutfits.findIndex(outfit => outfit.id === id);
+    
+    if (!userData.savedOutfits) {
+      return res.status(404).json({ error: 'Outfit not found' });
+    }
+    
+    const outfitIndex = userData.savedOutfits.findIndex(outfit => outfit.id === id);
     
     if (outfitIndex === -1) {
       return res.status(404).json({ error: 'Outfit not found' });
     }
 
-    savedOutfits.splice(outfitIndex, 1);
-    saveOutfits(savedOutfits);
+    // Delete from database
+    db.deleteSavedOutfit(id);
     
-    console.log(`Deleted saved outfit: ${id}`);
+    console.log(`Deleted saved outfit: ${id} for user ${userId}`);
     res.json({ message: 'Outfit deleted successfully' });
   } catch (error) {
     console.error('Error deleting outfit:', error);
@@ -647,6 +714,8 @@ app.delete('/api/outfits/saved/:id', (req, res) => {
 // Save outfit feedback
 app.post('/api/outfits/feedback', (req, res) => {
   try {
+    const userId = getUserFromRequest(req);
+    const userData = getUserData(userId);
     const { itemTitles, type, feedback, prompt } = req.body;
     
     if (!itemTitles || !Array.isArray(itemTitles) || itemTitles.length === 0) {
@@ -666,10 +735,10 @@ app.post('/api/outfits/feedback', (req, res) => {
       prompt: prompt || undefined
     };
 
-    outfitFeedback.push(newFeedback);
-    saveFeedback(outfitFeedback);
+    // Save to database
+    db.insertFeedback(userId, newFeedback);
     
-    console.log(`Saved ${type} feedback for outfit with ${itemTitles.length} items`);
+    console.log(`Saved ${type} feedback for outfit with ${itemTitles.length} items for user ${userId}`);
     res.status(201).json(newFeedback);
   } catch (error) {
     console.error('Error saving feedback:', error);
@@ -679,24 +748,33 @@ app.post('/api/outfits/feedback', (req, res) => {
 
 // Get all feedback
 app.get('/api/outfits/feedback', (req, res) => {
-  console.log(`Returning ${outfitFeedback.length} feedback entries`);
-  res.json(outfitFeedback);
+  const userId = getUserFromRequest(req);
+  const userData = getUserData(userId);
+  console.log(`Returning ${(userData.outfitFeedback || []).length} feedback entries for user ${userId}`);
+  res.json(userData.outfitFeedback || []);
 });
 
 // Delete feedback
 app.delete('/api/outfits/feedback/:id', (req, res) => {
   try {
+    const userId = getUserFromRequest(req);
+    const userData = getUserData(userId);
     const { id } = req.params;
-    const feedbackIndex = outfitFeedback.findIndex(f => f.id === id);
+    
+    if (!userData.outfitFeedback) {
+      return res.status(404).json({ error: 'Feedback not found' });
+    }
+    
+    const feedbackIndex = userData.outfitFeedback.findIndex(f => f.id === id);
     
     if (feedbackIndex === -1) {
       return res.status(404).json({ error: 'Feedback not found' });
     }
 
-    outfitFeedback.splice(feedbackIndex, 1);
-    saveFeedback(outfitFeedback);
+    // Delete from database
+    db.deleteFeedback(id);
     
-    console.log(`Deleted feedback: ${id}`);
+    console.log(`Deleted feedback: ${id} for user ${userId}`);
     res.json({ message: 'Feedback deleted successfully' });
   } catch (error) {
     console.error('Error deleting feedback:', error);
@@ -706,15 +784,18 @@ app.delete('/api/outfits/feedback/:id', (req, res) => {
 
 // Get explore suggestions
 app.get('/api/explore/suggestions', (req, res) => {
+  const userId = getUserFromRequest(req);
+  const userData = getUserData(userId);
   const today = new Date().toDateString();
-  const shouldUpdate = !lastExploreUpdate || lastExploreUpdate !== today;
+  const lastUpdate = userData.lastExploreUpdate || '';
+  const shouldUpdate = !lastUpdate || lastUpdate !== today;
   
-  console.log(`Explore suggestions requested. Last update: ${lastExploreUpdate || 'never'}, Today: ${today}`);
+  console.log(`Explore suggestions requested for user ${userId}. Last update: ${lastUpdate || 'never'}, Today: ${today}`);
   console.log(`Should update: ${shouldUpdate}`);
   
   res.json({
-    suggestions: exploreSuggestions,
-    lastUpdate: lastExploreUpdate,
+    suggestions: userData.exploreSuggestions || [],
+    lastUpdate: lastUpdate,
     shouldUpdate
   });
 });
@@ -722,25 +803,30 @@ app.get('/api/explore/suggestions', (req, res) => {
 // Generate explore suggestions
 app.post('/api/explore/generate', async (req, res) => {
   try {
+    const userId = getUserFromRequest(req);
+    const userData = getUserData(userId);
     const forceRefresh = req.query.force === 'true';
-    console.log(`Generating explore suggestions... (force: ${forceRefresh})`);
+    console.log(`Generating explore suggestions for user ${userId}... (force: ${forceRefresh})`);
     
     // Check if already updated today (unless force refresh)
     const today = new Date().toDateString();
-    if (!forceRefresh && lastExploreUpdate === today && exploreSuggestions.length > 0) {
-      console.log('Suggestions already generated today');
+    const lastUpdate = userData.lastExploreUpdate || '';
+    const suggestions = userData.exploreSuggestions || [];
+    
+    if (!forceRefresh && lastUpdate === today && suggestions.length > 0) {
+      console.log(`Suggestions already generated today for user ${userId}`);
       return res.json({
-        suggestions: exploreSuggestions,
-        lastUpdate: lastExploreUpdate,
+        suggestions: suggestions,
+        lastUpdate: lastUpdate,
         message: 'Suggestions already generated today'
       });
     }
 
     // Generate suggestions using LLM
-    const suggestions = await generateExploreSuggestions(
-      wardrobeItems,
-      userProfile,
-      outfitFeedback
+    const generatedSuggestions = await generateExploreSuggestions(
+      userData.items,
+      userData.userProfile || {},
+      userData.outfitFeedback || []
     );
 
     // Ensure uploads directory exists
@@ -751,7 +837,7 @@ app.post('/api/explore/generate', async (req, res) => {
 
     // Create ExploreSuggestion objects with IDs, images, and product links
     const exploreSuggestionsWithIds: ExploreSuggestion[] = await Promise.all(
-      suggestions.map(async (suggestion) => {
+      generatedSuggestions.map(async (suggestion) => {
         let imageUrl: string | undefined = suggestion.imageUrl;
         let productLink: string | undefined = suggestion.link;
         
@@ -823,14 +909,17 @@ app.post('/api/explore/generate', async (req, res) => {
       })
     );
 
-    exploreSuggestions = exploreSuggestionsWithIds;
-    lastExploreUpdate = today;
-    saveExploreSuggestions(exploreSuggestions, lastExploreUpdate);
+    // Save to database - delete old suggestions first, then insert new ones
+    db.deleteExploreSuggestions(userId);
+    for (const suggestion of exploreSuggestionsWithIds) {
+      db.insertExploreSuggestion(userId, suggestion);
+    }
+    db.upsertExploreUpdate(userId, today);
     
-    console.log(`Generated ${exploreSuggestions.length} explore suggestions`);
+    console.log(`Generated ${exploreSuggestionsWithIds.length} explore suggestions for user ${userId}`);
     res.json({
-      suggestions: exploreSuggestions,
-      lastUpdate: lastExploreUpdate
+      suggestions: exploreSuggestionsWithIds,
+      lastUpdate: today
     });
   } catch (error) {
     console.error('Error generating explore suggestions:', error);

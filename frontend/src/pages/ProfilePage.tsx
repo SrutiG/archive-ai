@@ -3,30 +3,35 @@ import './ProfilePage.css';
 import { UserProfile } from '../App';
 import BrandAutocomplete from '../components/BrandAutocomplete';
 import { PageHeader, SectionHeader, Button } from '../design-system';
+import { apiGet, apiPost } from '../utils/api';
+import { useUser } from '../contexts/UserContext';
 
 interface ProfilePageProps {
   apiUrl: string;
 }
 
 const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
+  const { currentUser } = useUser();
   const [profile, setProfile] = useState<UserProfile>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
-
   const fetchProfile = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/user/profile`);
+      const response = await apiGet('/api/user/profile');
       const data = await response.json();
       setProfile(data);
     } catch (err) {
       console.error('Error fetching profile:', err);
     }
   };
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchProfile();
+    }
+  }, [currentUser?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,13 +40,7 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
     setSuccess(false);
 
     try {
-      const response = await fetch(`${apiUrl}/api/user/profile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(profile),
-      });
+      const response = await apiPost('/api/user/profile', profile);
 
       if (!response.ok) {
         const errorData = await response.json();

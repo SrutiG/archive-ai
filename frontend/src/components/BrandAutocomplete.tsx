@@ -41,6 +41,9 @@ const FASHION_BRANDS = [
   'Stella McCartney',
   'Vivienne Westwood',
   'Alexander McQueen',
+  'Banana Republic',
+  'Camper',
+  'Professor E',
   'Zara',
   'H&M',
   'COS',
@@ -55,6 +58,11 @@ const FASHION_BRANDS = [
   'Totême',
   'Vintage',
   'Thrift',
+  'Jean Paul Gaultier',
+  'Deadwood',
+  'Stussy',
+  'Reformation',
+  'Moschino',
   'Other'
 ];
 

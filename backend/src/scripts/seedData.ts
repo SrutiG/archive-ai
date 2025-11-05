@@ -2,19 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { WardrobeItem, UserProfile } from '../index';
+import * as db from '../database';
 
-const DATA_FILE = path.join(__dirname, '../../data/wardrobe.json');
 const DATA_DIR = path.join(__dirname, '../../data');
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
-
-interface WardrobeData {
-  items: WardrobeItem[];
-  outfitGenerationClicks: number;
-  lastClickResetDate: string;
-  userProfile?: UserProfile;
-  savedOutfits?: any[];
-  outfitFeedback?: any[];
-}
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -40,28 +31,36 @@ function generateImageFilename(itemTitle: string): string {
   return `${uuidv4()}-${sanitized}.png`;
 }
 
-function getSeedData(): WardrobeData {
+function getSeedData(): { items: WardrobeItem[], userProfile: UserProfile } {
   const now = new Date().toISOString();
   
-  // User profile: 5'2" (62 inches) and 125 lbs
+  // User profile: 5'2" (62 inches) and 124.7 lbs with style preferences
   const userProfile: UserProfile = {
     height: 62,
-    weight: 125,
+    weight: 124.7,
     heightUnit: 'inches',
-    weightUnit: 'lbs'
+    weightUnit: 'lbs',
+    stylePreferences: "avant garde, feminine, all black. I like to elongate my silhouette with a cropped or tucked shirt with long pants and high heeled or platform shoes.",
+    brands: [
+      "Maison Margiela",
+      "Rick Owens",
+      "Ann Demeulemeester",
+      "Junya Watanabe",
+      "Yohji Yamamoto",
+      "Comme des Garçons",
+      "Issey Miyake"
+    ],
+    waist: 26,
+    inseam: 28,
+    shoeSize: "8",
+    measurementsUnit: "inches",
+    hairColor: "Black",
+    hairTexture: "Curly - 2C",
+    skinColor: "Tan"
   };
   
-  // Clear existing images before seeding new ones
-  if (fs.existsSync(UPLOADS_DIR)) {
-    const files = fs.readdirSync(UPLOADS_DIR);
-    files.forEach(file => {
-      const filePath = path.join(UPLOADS_DIR, file);
-      if (fs.statSync(filePath).isFile()) {
-        fs.unlinkSync(filePath);
-      }
-    });
-    console.log(`Cleared ${files.length} existing image files`);
-  }
+  // Don't delete existing images - preserve user's photos!
+  // The seed script will only create placeholder images for items that don't have images
 
   // Item templates based on actual wardrobe
   const itemTemplates: Array<Omit<WardrobeItem, 'id' | 'imageUrl'>> = [
@@ -556,60 +555,103 @@ function getSeedData(): WardrobeData {
     }
   ];
 
-  // Create items with IDs and image files
+  // Create items with IDs - only add imageUrl if file doesn't exist
+  // This preserves existing photos while allowing new items to have placeholders
   const items: WardrobeItem[] = itemTemplates.map(template => {
+    const item: WardrobeItem = {
+      id: uuidv4(),
+      ...template
+    };
+    
+    // Only create placeholder image if it doesn't already exist
+    // This way we don't overwrite existing photos
     const filename = generateImageFilename(template.title);
     const imagePath = path.join(UPLOADS_DIR, filename);
     
-    // Create the placeholder image file
-    createPlaceholderImage(imagePath);
+    if (!fs.existsSync(imagePath)) {
+      // Only create placeholder if file doesn't exist
+      createPlaceholderImage(imagePath);
+      item.imageUrl = `/uploads/${filename}`;
+    }
+    // If file exists, don't set imageUrl - item will use category placeholder
     
-    return {
-      id: uuidv4(),
-      ...template,
-      imageUrl: `/uploads/${filename}`
-    };
+    return item;
   });
 
-  return {
-    items,
-    outfitGenerationClicks: 0,
-    lastClickResetDate: new Date().toDateString(),
-    userProfile,
-    savedOutfits: [],
-    outfitFeedback: []
-  };
+  return { items, userProfile };
 }
 
-console.log('Seeding wardrobe data...');
+const TARGET_USER_NAME = 'Sruti';
+
+console.log(`Seeding wardrobe data for user "${TARGET_USER_NAME}"...`);
 
 try {
   ensureDataDir();
 
-  // Check if data file already exists and warn user
-  if (fs.existsSync(DATA_FILE)) {
-    console.log('⚠️  Data file already exists. Restoring database to seeded state...');
-    console.log('   This will overwrite all existing data, saved outfits, and feedback.');
+  // Find or create the target user in database
+  let targetUser = db.getAllUsers().find(u => u.name === TARGET_USER_NAME);
+  
+  if (!targetUser) {
+    // Create new user
+    const id = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const createdAt = new Date().toISOString();
+    targetUser = db.createUser(id, TARGET_USER_NAME, createdAt);
+    console.log(`   Created new user: ${targetUser.name} (${targetUser.id})`);
+  } else {
+    console.log(`   Found existing user: ${targetUser.name} (${targetUser.id})`);
     
-    // Create backup before overwriting
-    const backupFile = `${DATA_FILE}.backup.${Date.now()}`;
-    fs.copyFileSync(DATA_FILE, backupFile);
-    console.log(`   Backup created: ${path.basename(backupFile)}`);
+    // Clear existing items for this user (optional - comment out if you want to preserve)
+    const existingItems = db.getItemsByUser(targetUser.id);
+    if (existingItems.length > 0) {
+      console.log(`   Clearing ${existingItems.length} existing items for user...`);
+      for (const item of existingItems) {
+        db.deleteItem(item.id);
+      }
+    }
+    
+    // Clear saved outfits and feedback (optional - comment out if you want to preserve)
+    const savedOutfits = db.getSavedOutfits(targetUser.id);
+    const feedback = db.getFeedback(targetUser.id);
+    if (savedOutfits.length > 0 || feedback.length > 0) {
+      console.log(`   Clearing ${savedOutfits.length} saved outfits and ${feedback.length} feedback entries...`);
+      for (const outfit of savedOutfits) {
+        db.deleteSavedOutfit(outfit.id);
+      }
+      for (const fb of feedback) {
+        db.deleteFeedback(fb.id);
+      }
+    }
   }
 
-  const seedData = getSeedData();
+  // Get seed data
+  const { items, userProfile } = getSeedData();
   
-  // Write the seed data (overwriting if exists)
-  fs.writeFileSync(DATA_FILE, JSON.stringify(seedData, null, 2), 'utf-8');
+  // Insert items into database
+  console.log(`   Inserting ${items.length} items into database...`);
+  for (const item of items) {
+    db.insertItem(item, targetUser.id);
+  }
   
-  console.log('✅ Database restored to seeded state!');
-  console.log(`   - Added ${seedData.items.length} items`);
-  console.log(`   - Created ${seedData.items.length} placeholder image files in uploads/`);
-  console.log(`   - User profile: ${seedData.userProfile?.height}" height, ${seedData.userProfile?.weight} lbs`);
-  console.log(`   - Items are mostly black as noted in your wardrobe index`);
-  console.log(`   - Categories: ${[...new Set(seedData.items.map(i => i.category))].join(', ')}`);
-  console.log(`   - Reset: Saved outfits and feedback have been cleared`);
-  console.log(`   - Note: Placeholder images are minimal 1x1 PNGs (browsers will scale them)`);
+  // Update user profile
+  db.upsertProfile(targetUser.id, userProfile);
+  
+  // Reset user data (outfit clicks)
+  db.updateUserData(targetUser.id, 0, new Date().toDateString());
+  
+  const itemsWithImages = items.filter(i => i.imageUrl).length;
+  const itemsWithoutImages = items.length - itemsWithImages;
+  
+  console.log('✅ Database seeded successfully!');
+  console.log(`   - Added ${items.length} items for user "${TARGET_USER_NAME}"`);
+  console.log(`   - Created ${itemsWithImages} placeholder image files in uploads/`);
+  if (itemsWithoutImages > 0) {
+    console.log(`   - ${itemsWithoutImages} items preserved existing photos (no imageUrl set)`);
+  }
+  console.log(`   - User profile: ${userProfile.height}" height, ${userProfile.weight} lbs`);
+  console.log(`   - Style preferences and brands updated`);
+  console.log(`   - Categories: ${[...new Set(items.map(i => i.category))].join(', ')}`);
+  console.log(`   - Reset: Saved outfits and feedback have been cleared for this user`);
+  console.log(`   - Note: Existing photos were preserved and not deleted`);
 } catch (error) {
   console.error('❌ Error seeding data:', error);
   process.exit(1);
