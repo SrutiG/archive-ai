@@ -14,7 +14,7 @@ interface ItemInputProps {
 
 type Measurements = MeasurementsType;
 
-const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading, apiUrl }) => {
+const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading, apiUrl: _apiUrl }) => {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
@@ -35,7 +35,7 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
     startCapture,
     handleVideoReady,
     error: cameraError,
-    setError: setCameraError
+    setError: _setCameraError
   } = useCamera();
   
   // Merge camera errors with component errors

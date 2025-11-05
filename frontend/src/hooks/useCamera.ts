@@ -21,7 +21,7 @@ export const useCamera = (): UseCameraReturn => {
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Attach stream to video element once it's rendered
   useEffect(() => {

@@ -38,7 +38,7 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
     startCapture,
     handleVideoReady,
     error: cameraError,
-    setError: setCameraError
+    setError: _setCameraError
   } = useCamera();
   
   // Merge camera errors with component errors

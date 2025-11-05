@@ -10,7 +10,7 @@ interface ProfilePageProps {
   apiUrl: string;
 }
 
-const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl }) => {
+const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
   const { currentUser } = useUser();
   const [profile, setProfile] = useState<UserProfile>({});
   const [loading, setLoading] = useState(false);

@@ -28,7 +28,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string>('');
-  const [shouldUpdate, setShouldUpdate] = useState(false);
+  const [_shouldUpdate, setShouldUpdate] = useState(false);
 
   const handleGenerate = async (forceRefresh: boolean = false) => {
     setLoading(true);
@@ -95,18 +95,6 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
       setItems(data);
     } catch (error) {
       console.error('Error fetching items:', error);
-    }
-  };
-
-  const fetchSuggestions = async () => {
-    try {
-      const response = await apiGet('/api/explore/suggestions');
-      const data = await response.json();
-      setSuggestions(data.suggestions || []);
-      setLastUpdate(data.lastUpdate || '');
-      setShouldUpdate(data.shouldUpdate || false);
-    } catch (error) {
-      console.error('Error fetching suggestions:', error);
     }
   };
 

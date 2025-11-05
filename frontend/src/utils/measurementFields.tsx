@@ -1,5 +1,3 @@
-import React from 'react';
-
 export interface Measurements {
   size?: string;
   waist?: number;
