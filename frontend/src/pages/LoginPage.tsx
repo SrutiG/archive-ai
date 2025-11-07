@@ -1,16 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useUser } from '../contexts/UserContext';
 import '../pages/LoginPage.css';
 
 const LoginPage: React.FC = () => {
-  const { users, loadUsers, createUser, setCurrentUser } = useUser();
+  const { users, loadUsers, createUser, setCurrentUser, usersLoading } = useUser();
   const [newUserName, setNewUserName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadUsers();
-  }, [loadUsers]);
+  // Note: loadUsers is already called in UserContext on mount (line 116-118)
+  // No need to call it again here - that was causing the infinite loop
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +46,12 @@ const LoginPage: React.FC = () => {
 
         <div className="login-section">
           <h2 className="login-section-title">Existing Users</h2>
-          {users.length === 0 ? (
+          {usersLoading ? (
+            <div className="login-loading">
+              <div className="loading-spinner"></div>
+              <p className="loading-text">Loading users...</p>
+            </div>
+          ) : users.length === 0 ? (
             <p className="login-empty">No users yet. Create one below.</p>
           ) : (
             <div className="user-list">

@@ -63,22 +63,33 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
     if (currentUser) {
       fetchItems();
       
-      // Auto-generate suggestions on first visit if none exist today
-      const autoGenerate = async () => {
+      // Load existing suggestions - only auto-generate if none exist for today
+      const loadSuggestions = async () => {
         setSuggestionsLoading(true);
         try {
           const response = await apiGet('/api/explore/suggestions');
           const data = await response.json();
           
-          // If no suggestions exist or should update, auto-generate
-          if (!data.suggestions || data.suggestions.length === 0 || data.shouldUpdate) {
+          const today = new Date().toDateString();
+          const hasSuggestionsForToday = data.suggestions && data.suggestions.length > 0 && data.lastUpdate === today;
+          
+          if (hasSuggestionsForToday) {
+            // Suggestions already exist for today - just load them, don't regenerate
+            setSuggestions(data.suggestions);
+            setLastUpdate(data.lastUpdate || '');
+            setShouldUpdate(false);
+          } else if (data.suggestions && data.suggestions.length > 0) {
+            // Suggestions exist but not for today - load them first, then generate new ones
+            setSuggestions(data.suggestions);
+            setLastUpdate(data.lastUpdate || '');
+            setShouldUpdate(true);
+            // Generate new suggestions for today
             setLoading(true);
             await handleGenerate(false);
           } else {
-            // Load existing suggestions
-            setSuggestions(data.suggestions || []);
-            setLastUpdate(data.lastUpdate || '');
-            setShouldUpdate(data.shouldUpdate || false);
+            // No suggestions exist at all - generate them
+            setLoading(true);
+            await handleGenerate(false);
           }
         } catch (error) {
           console.error('Error checking suggestions:', error);
@@ -88,7 +99,7 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
         }
       };
       
-      autoGenerate();
+      loadSuggestions();
     }
   }, [currentUser?.id]);
 
@@ -150,6 +161,11 @@ const ExplorePage: React.FC<ExplorePageProps> = ({ apiUrl }) => {
           <p className="loading-text">
             {loading ? 'Generating personalized recommendations...' : 'Loading suggestions...'}
           </p>
+          {loading && (
+            <p className="loading-subtext">
+              This may take a moment, please be patient...
+            </p>
+          )}
         </div>
       )}
 

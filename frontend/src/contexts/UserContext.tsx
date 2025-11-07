@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { getUserCookie, setUserCookie, removeUserCookie } from '../utils/cookies';
 
 export interface User {
@@ -15,6 +15,7 @@ interface UserContextType {
   createUser: (name: string) => Promise<User>;
   switchUser: (user: User) => void;
   isLoading: boolean;
+  usersLoading: boolean;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
@@ -26,6 +27,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [currentUser, setCurrentUserState] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [usersLoading, setUsersLoading] = useState(false);
 
   // Load current user from cookie or localStorage on mount
   useEffect(() => {
@@ -56,8 +58,9 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsLoading(false);
   }, []);
 
-  // Load users list
-  const loadUsers = async () => {
+  // Load users list - memoized to prevent infinite loops
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/users`);
       if (!response.ok) {
@@ -67,8 +70,10 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUsers(data);
     } catch (error) {
       console.error('Error loading users:', error);
+    } finally {
+      setUsersLoading(false);
     }
-  };
+  }, []); // Empty dependency array - function doesn't depend on any props or state
 
   // Create a new user
   const createUser = async (name: string): Promise<User> => {
@@ -122,6 +127,7 @@ export const UserProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         createUser,
         switchUser,
         isLoading,
+        usersLoading,
       }}
     >
       {children}

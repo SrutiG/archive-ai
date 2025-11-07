@@ -332,7 +332,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
           <SectionHeader title="Outfit Generator" />
           <div className="loading-container">
             <div className="loading-spinner"></div>
-            <p className="loading-text">Loading your wardrobe...</p>
+            <p className="loading-text">Loading outfit generator...</p>
           </div>
         </div>
       ) : (

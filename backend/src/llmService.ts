@@ -192,6 +192,7 @@ export async function generateOutfits(
 
     // Add selected items context if provided
     let selectedItemsContext = '';
+    let exclusionRules = '';
     if (selectedItems && selectedItems.length > 0) {
       const selectedItemsDesc = selectedItems.map(item => {
         let desc = item.title;
@@ -213,7 +214,24 @@ export async function generateOutfits(
         return desc;
       }).join('\n');
       const selectedItemTitles = selectedItems.map(item => item.title).join(', ');
-      selectedItemsContext = `CRITICAL REQUIREMENT: The user has selected these specific items that MUST be included in EVERY single generated outfit: ${selectedItemTitles}. \n\nEach of the 5 generated outfits MUST include ALL of these selected items. Do not generate any outfit without these items. Here are the selected items with full details:\n${selectedItemsDesc}\n\nGenerate 5 different outfit combinations, each one MUST include all the selected items listed above. Create variety by pairing them with different complementary pieces from the wardrobe. `;
+      
+      // Detect items that cover the lower body to prevent redundant items
+      const lowerBodyCoveringKeywords = ['overall', 'jumpsuit', 'romper', 'dress', 'onesie'];
+      const hasLowerBodyCovering = selectedItems.some(item => {
+        const titleLower = item.title.toLowerCase();
+        const descLower = (item.description || '').toLowerCase();
+        const categoryLower = (item.category || '').toLowerCase();
+        return lowerBodyCoveringKeywords.some(keyword => 
+          titleLower.includes(keyword) || descLower.includes(keyword) || categoryLower.includes(keyword)
+        );
+      });
+      
+      if (hasLowerBodyCovering) {
+        exclusionRules = `\n\nCRITICAL EXCLUSION RULE: The selected items include a lower-body-covering garment (overalls, jumpsuit, romper, dress, etc.). DO NOT include any of the following items in the generated outfits: pants, trousers, shorts, skirts, or any other bottom-wear items. The selected lower-body-covering item already serves as the bottom piece. Only suggest tops, outerwear, shoes, accessories, and other items that complement the selected lower-body-covering item. `;
+        console.log(`[LLM] Detected lower-body-covering item in selected items - excluding pants/shorts/skirts`);
+      }
+      
+      selectedItemsContext = `CRITICAL REQUIREMENT: The user has selected these specific items that MUST be included in EVERY single generated outfit: ${selectedItemTitles}. \n\nEach of the 5 generated outfits MUST include ALL of these selected items. Do not generate any outfit without these items. Here are the selected items with full details:\n${selectedItemsDesc}\n\nGenerate 5 different outfit combinations, each one MUST include all the selected items listed above. Create variety by pairing them with different complementary pieces from the wardrobe.${exclusionRules}`;
       console.log(`[LLM] Selected items context: ${selectedItems.length} items`);
     }
 
@@ -283,7 +301,7 @@ export async function generateOutfits(
         },
         {
           role: 'user',
-          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the 5 generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly 5 outfit combinations.`
+          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the 5 generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''}${exclusionRules} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly 5 outfit combinations.`
         }
       ],
       max_tokens: 2000,
@@ -378,6 +396,41 @@ export async function generateOutfits(
     // Validate and filter outfits
     const allItemTitles = Object.values(itemsByCategory).flat().map(item => item.title);
     const beforeFilter = outfits.length;
+    
+    // Post-process to remove redundant items if selected items include lower-body-covering garments
+    if (selectedItems && selectedItems.length > 0) {
+      const lowerBodyCoveringKeywords = ['overall', 'jumpsuit', 'romper', 'onesie'];
+      const hasLowerBodyCovering = selectedItems.some(item => {
+        const titleLower = item.title.toLowerCase();
+        const descLower = (item.description || '').toLowerCase();
+        const categoryLower = (item.category || '').toLowerCase();
+        return lowerBodyCoveringKeywords.some(keyword => 
+          titleLower.includes(keyword) || descLower.includes(keyword) || categoryLower.includes(keyword)
+        );
+      });
+      
+      if (hasLowerBodyCovering) {
+        const redundantKeywords = ['pant', 'trouser', 'short', 'skirt', 'dress'];
+        outfits = outfits.map(outfit => ({
+          ...outfit,
+          items: outfit.items.filter(itemTitle => {
+            // Keep selected items
+            if (selectedItems.some(selected => selected.title === itemTitle)) {
+              return true;
+            }
+            // Remove redundant bottom-wear items
+            const titleLower = itemTitle.toLowerCase();
+            const isRedundant = redundantKeywords.some(keyword => titleLower.includes(keyword));
+            if (isRedundant) {
+              console.log(`[LLM] Filtering out redundant item: ${itemTitle} (conflicts with lower-body-covering selected item)`);
+            }
+            return !isRedundant;
+          })
+        }));
+        console.log(`[LLM] Post-processed outfits to remove redundant bottom-wear items`);
+      }
+    }
+    
     outfits = outfits
       .map(outfit => ({
         ...outfit,

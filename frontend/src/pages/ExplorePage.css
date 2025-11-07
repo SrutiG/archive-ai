@@ -36,6 +36,17 @@
   font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.loading-subtext {
+  font-size: 0.75rem;
+  color: #999;
+  font-weight: 300;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+  margin: 0;
 }
 
 @media (max-width: 768px) {
