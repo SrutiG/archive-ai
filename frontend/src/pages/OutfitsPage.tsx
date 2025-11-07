@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './OutfitsPage.css';
 import { WardrobeItem } from '../App';
 import FeedbackModal from '../components/FeedbackModal';
@@ -41,6 +41,29 @@ interface OutfitFeedback {
   prompt?: string;
 }
 
+const CATEGORY_ORDER = [
+  {
+    key: 'tops',
+    label: 'Top',
+    keywords: ['top', 'tops', 'shirt', 'blouse', 'sweater', 'hoodie', 'coat', 'jacket', 'outerwear', 'blazer', 'cardigan', 'dress'],
+  },
+  {
+    key: 'bottoms',
+    label: 'Bottom',
+    keywords: ['bottom', 'bottoms', 'pant', 'pants', 'jean', 'jeans', 'short', 'shorts', 'skirt', 'trouser', 'leggings'],
+  },
+  {
+    key: 'shoes',
+    label: 'Shoes',
+    keywords: ['shoe', 'shoes', 'boot', 'boots', 'sneaker', 'sneakers', 'heel', 'heels', 'loafer', 'loafers', 'flat', 'flats', 'sandals', 'sandal'],
+  },
+  {
+    key: 'accessories',
+    label: 'Accessories',
+    keywords: ['accessory', 'accessories', 'bag', 'belt', 'hat', 'scarf', 'jewelry', 'watch', 'tie', 'glove', 'gloves'],
+  },
+] as const;
+
 const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   const { currentUser } = useUser();
   const [items, setItems] = useState<WardrobeItem[]>([]);
@@ -55,6 +78,9 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   const [status, setStatus] = useState<OutfitStatus | null>(null);
   const [savingOutfitId, setSavingOutfitId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<OutfitFeedback[]>([]);
+  const [expandedContexts, setExpandedContexts] = useState<Record<string, boolean>>({});
+  const [contextOverflow, setContextOverflow] = useState<Record<string, boolean>>({});
+  const contextRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackModalType, setFeedbackModalType] = useState<'like' | 'dislike'>('like');
   const [feedbackModalOutfit, setFeedbackModalOutfit] = useState<string[]>([]);
@@ -107,6 +133,24 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
       setSavedOutfitsLoading(false);
     }
   };
+
+  useEffect(() => {
+    const overflowMap: Record<string, boolean> = {};
+    savedOutfits.forEach((outfit) => {
+      const contentEl = contextRefs.current[outfit.id];
+      if (contentEl) {
+        overflowMap[outfit.id] = contentEl.scrollHeight > 160;
+      }
+    });
+    setContextOverflow(overflowMap);
+
+    const currentKeys = new Set(savedOutfits.map((outfit) => outfit.id));
+    Object.keys(contextRefs.current).forEach((key) => {
+      if (!currentKeys.has(key)) {
+        delete contextRefs.current[key];
+      }
+    });
+  }, [savedOutfits]);
 
   const fetchStatus = async () => {
     setStatusLoading(true);
@@ -445,21 +489,6 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                     );
                   })}
                 </div>
-                {outfit.justification && (
-                  <div className="outfit-justification">
-                    <strong>Why this combination:</strong> {outfit.justification}
-                  </div>
-                )}
-                {outfit.stylingSuggestions && outfit.stylingSuggestions.length > 0 && (
-                  <div className="outfit-styling-suggestions">
-                    <strong>Styling suggestions:</strong>
-                    <ul>
-                      {outfit.stylingSuggestions.map((suggestion: string, suggestionIndex: number) => (
-                        <li key={suggestionIndex}>{suggestion}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
                 <div className="outfit-actions">
                   <Button
                     variant="secondary"
@@ -489,6 +518,21 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                     {savingOutfitId === index ? 'Saving...' : '💾 Save'}
                   </Button>
                 </div>
+                {outfit.justification && (
+                  <div className="outfit-justification">
+                    <strong>Why this combination:</strong> {outfit.justification}
+                  </div>
+                )}
+                {outfit.stylingSuggestions && outfit.stylingSuggestions.length > 0 && (
+                  <div className="outfit-styling-suggestions">
+                    <strong>Styling suggestions:</strong>
+                    <ul>
+                      {outfit.stylingSuggestions.map((suggestion: string, suggestionIndex: number) => (
+                        <li key={suggestionIndex}>{suggestion}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             );
             })}
@@ -519,53 +563,126 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
       ) : savedOutfits.length > 0 && (
         <div className="saved-outfits-section">
           <SectionHeader title={`Saved Outfits (${savedOutfits.length})`} />
-          <div className="outfits-list">
-            {savedOutfits.map((outfit) => (
-              <div key={outfit.id} className="outfit-card saved">
-                {outfit.prompt && (
-                  <div className="outfit-prompt">
-                    <strong>Context:</strong> {outfit.prompt}
-                  </div>
-                )}
-                <div className="outfit-items">
-                  {(outfit.itemTitles || []).map((itemTitle: string, itemIndex: number) => {
-                    const item = items.find((i) => i.title === itemTitle);
-                    return (
-                      <div key={itemIndex} className="outfit-item">
-                        {item ? (
-                          <>
-                            <img
-                              src={getItemImageUrl(item, apiUrl)}
-                              alt={itemTitle}
-                              className="outfit-item-image"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
-                              }}
-                            />
-                            <span className="outfit-item-title">{itemTitle}</span>
-                          </>
-                        ) : (
-                          <span className="outfit-item-title">{itemTitle}</span>
+          <div className="outfits-grid">
+            {savedOutfits.map((outfit) => {
+              const outfitItemData = (outfit.itemTitles || []).map((itemTitle: string) => ({
+                title: itemTitle,
+                item: items.find((i) => i.title === itemTitle),
+              }));
+              const isContextExpanded = expandedContexts[outfit.id] ?? false;
+              const hasContextOverflow = contextOverflow[outfit.id] ?? false;
+
+              const categoryBuckets = CATEGORY_ORDER.map((category) => ({
+                ...category,
+                items: [] as { title: string; item?: WardrobeItem }[],
+              }));
+
+              outfitItemData.forEach(({ title, item }) => {
+                const normalizedCategory = (item?.category || '').toLowerCase();
+                const normalizedTitle = title.toLowerCase();
+                const matchedCategory = CATEGORY_ORDER.find((category) =>
+                  category.keywords.some((keyword) =>
+                    normalizedCategory.includes(keyword) || normalizedTitle.includes(keyword)
+                  )
+                );
+
+                const bucketKey = matchedCategory ? matchedCategory.key : 'accessories';
+                const targetBucket = categoryBuckets.find((bucket) => bucket.key === bucketKey);
+
+                if (targetBucket) {
+                  targetBucket.items.push({ title, item });
+                }
+              });
+
+              return (
+                <div
+                  key={outfit.id}
+                  className="outfit-card saved"
+                >
+                  <div className="outfit-card-content">
+                    <div className="outfit-category-layout">
+                      {categoryBuckets.map((bucket) => (
+                        <div key={bucket.key} className="outfit-category-row">
+                          <span className="outfit-category-row-label">{bucket.label}</span>
+                          <div className="outfit-category-row-items">
+                            {bucket.items.length > 0 ? (
+                              bucket.items.map(({ title, item }) => (
+                                <div key={title} className="outfit-category-row-item" data-tooltip={title}>
+                                  <div className="outfit-category-row-thumb">
+                                    {item ? (
+                                      <img
+                                        src={getItemImageUrl(item, apiUrl)}
+                                        alt={title}
+                                        className="outfit-category-row-image"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="outfit-category-row-placeholder">{title}</div>
+                                    )}
+                                  </div>
+                                  <span className="outfit-category-row-title">{title}</span>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="outfit-category-row-item placeholder" data-tooltip="None">
+                                <div className="outfit-category-row-thumb placeholder">
+                                  <div className="outfit-category-row-placeholder-text">—</div>
+                                </div>
+                                <span className="outfit-category-row-title">None</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {outfit.prompt && (
+                      <div
+                        className={`outfit-context ${isContextExpanded ? 'expanded' : ''} ${
+                          hasContextOverflow ? 'truncated' : ''
+                        }`}
+                      >
+                        <strong>Context:</strong>
+                        <div
+                          className="outfit-context-content"
+                          ref={(el) => {
+                            contextRefs.current[outfit.id] = el;
+                          }}
+                        >
+                          {outfit.prompt}
+                        </div>
+                        {hasContextOverflow && (
+                          <button
+                            type="button"
+                            className="outfit-context-toggle"
+                            onClick={() =>
+                              setExpandedContexts(prev => ({
+                                ...prev,
+                                [outfit.id]: !isContextExpanded,
+                              }))
+                            }
+                          >
+                            {isContextExpanded ? 'Read less' : 'Read more'}
+                          </button>
                         )}
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
+                  <div className="outfit-footer">
+                    <small>{new Date(outfit.createdAt).toLocaleDateString()}</small>
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      onClick={() => handleDeleteSavedOutfit(outfit.id)}
+                      className="delete-outfit-btn"
+                    >
+                      🗑️ Delete
+                    </Button>
+                  </div>
                 </div>
-                <div className="outfit-footer">
-                  <small>
-                    Saved {new Date(outfit.createdAt).toLocaleDateString()}
-                  </small>
-                  <Button
-                    variant="secondary"
-                    size="small"
-                    onClick={() => handleDeleteSavedOutfit(outfit.id)}
-                    className="delete-outfit-btn"
-                  >
-                    🗑️ Delete
-                  </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
