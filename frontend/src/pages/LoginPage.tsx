@@ -3,7 +3,7 @@ import { useUser } from '../contexts/UserContext';
 import '../pages/LoginPage.css';
 
 const LoginPage: React.FC = () => {
-  const { users, loadUsers, createUser, setCurrentUser, usersLoading } = useUser();
+  const { users, createUser, setCurrentUser, usersLoading } = useUser();
   const [newUserName, setNewUserName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
