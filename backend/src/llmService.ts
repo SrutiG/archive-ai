@@ -278,6 +278,9 @@ export async function generateOutfits(
       }
     }
 
+    // Build a list of all exact item titles for reference
+    const allExactTitles = Object.values(itemsByCategory).flat().map(item => item.title).join(', ');
+    
     console.log('[LLM] Calling OpenAI API for outfit generation...');
     const startTime = Date.now();
     const response = await openai.chat.completions.create({
@@ -288,12 +291,17 @@ export async function generateOutfits(
           content: `You are a fashion stylist. Generate 5-7 outfit combinations using the available wardrobe items. 
           Each outfit can include up to 10 pieces. You can include multiple items from the same category (e.g., multiple jewelry pieces, multiple jacket layers). 
           Pay close attention to the user's style preferences and personal aesthetic when creating combinations.
+          
+          CRITICAL: You MUST use the EXACT item titles as provided in the wardrobe list. Do NOT modify, shorten, or paraphrase item titles. 
+          For example, if the wardrobe has "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" - NOT "Black Blazer" or "Rick Owens Blazer".
+          The item titles in your "items" array must match EXACTLY (case-sensitive) with the titles provided in the wardrobe.
+          
           For each outfit, provide:
-          1. A list of item titles (up to 10 pieces)
+          1. A list of item titles (up to 10 pieces) - MUST be exact matches from the wardrobe
           2. A justification explaining why you chose this specific combination
           3. Styling suggestions (e.g., "wear blazer half buttoned", "wear hair in bun", "light makeup", "tuck in shirt", "cuff the sleeves")
           Return the outfits as a JSON object with a key "outfits" containing an array of objects, where each object has:
-          - "items": array of item titles (up to 10 pieces)
+          - "items": array of item titles (up to 10 pieces) - MUST be exact matches from the wardrobe list
           - "justification": string explaining why this combination works
           - "stylingSuggestions": array of styling tips (e.g., ["wear blazer half buttoned", "wear hair in bun", "light makeup"])
           Example format: {"outfits": [{"items": ["Blue Shirt", "Black Jeans", "White Sneakers"], "justification": "This combination creates a casual yet polished look...", "stylingSuggestions": ["tuck in shirt", "cuff the sleeves"]}, ...]}
@@ -301,7 +309,7 @@ export async function generateOutfits(
         },
         {
           role: 'user',
-          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the 5 generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''}${exclusionRules} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly 5 outfit combinations.`
+          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the 5 generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''}${exclusionRules} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly 5 outfit combinations. Remember: Use EXACT item titles from the list above - no modifications, abbreviations, or variations.`
         }
       ],
       max_tokens: 2000,
@@ -431,6 +439,7 @@ export async function generateOutfits(
       }
     }
     
+    // Validate and filter outfits
     outfits = outfits
       .map(outfit => ({
         ...outfit,
