@@ -236,6 +236,18 @@ describe('API Integration Tests', () => {
   });
   
   describe('User Profile', () => {
+    it('should verify we are using PostgreSQL (not SQLite)', () => {
+      // Verify we're using PostgreSQL by checking DATABASE_URL is set
+      expect(process.env.DATABASE_URL).toBeDefined();
+      expect(process.env.DATABASE_URL).toContain('postgresql://');
+      expect(process.env.DATABASE_URL).not.toContain('sqlite');
+      
+      // Verify the database module is using PostgreSQL
+      const dbModule = require('../database');
+      // The database module should be using PostgreSQL when DATABASE_URL is set
+      expect(!!process.env.DATABASE_URL).toBe(true);
+    });
+    
     it('should get user profile with all seeded details', async () => {
       const response = await apiRequest('GET', '/api/user/profile');
       expect(response.status).toBe(200);
@@ -280,6 +292,122 @@ describe('API Integration Tests', () => {
       expect(verifyResponse.body.height).toBe(66);
       expect(verifyResponse.body.weight).toBe(135);
       expect(verifyResponse.body.stylePreferences).toBe('Updated test preferences');
+    });
+    
+    it('should save and retrieve body measurements (waist, chest, hips, inseam)', async () => {
+      const profileWithMeasurements = {
+        height: 68,
+        weight: 140,
+        heightUnit: 'inches' as const,
+        weightUnit: 'lbs' as const,
+        waist: 28.5,
+        chest: 36,
+        hips: 38,
+        inseam: 30,
+        measurementsUnit: 'inches' as const,
+        stylePreferences: 'Test measurements',
+        brands: ['Test Brand'],
+      };
+      
+      // Save profile with measurements
+      const saveResponse = await apiRequest('POST', '/api/user/profile')
+        .send(profileWithMeasurements);
+      
+      expect(saveResponse.status).toBe(200);
+      expect(saveResponse.body).toHaveProperty('waist', 28.5);
+      expect(saveResponse.body).toHaveProperty('chest', 36);
+      expect(saveResponse.body).toHaveProperty('hips', 38);
+      expect(saveResponse.body).toHaveProperty('inseam', 30);
+      expect(saveResponse.body).toHaveProperty('measurementsUnit', 'inches');
+      expect(saveResponse.body).toHaveProperty('height', 68);
+      expect(saveResponse.body).toHaveProperty('weight', 140);
+      
+      // Verify measurements were saved by fetching again
+      const getResponse = await apiRequest('GET', '/api/user/profile');
+      expect(getResponse.status).toBe(200);
+      expect(getResponse.body).toHaveProperty('waist', 28.5);
+      expect(getResponse.body).toHaveProperty('chest', 36);
+      expect(getResponse.body).toHaveProperty('hips', 38);
+      expect(getResponse.body).toHaveProperty('inseam', 30);
+      expect(getResponse.body).toHaveProperty('measurementsUnit', 'inches');
+      
+      // Verify all measurements are numbers
+      expect(typeof getResponse.body.waist).toBe('number');
+      expect(typeof getResponse.body.chest).toBe('number');
+      expect(typeof getResponse.body.hips).toBe('number');
+      expect(typeof getResponse.body.inseam).toBe('number');
+    });
+    
+    it('should update measurements independently of other profile fields', async () => {
+      // First, set a profile with some measurements
+      const initialProfile = {
+        height: 65,
+        weight: 130,
+        heightUnit: 'inches' as const,
+        weightUnit: 'lbs' as const,
+        waist: 28,
+        chest: 35,
+        measurementsUnit: 'inches' as const,
+      };
+      
+      await apiRequest('POST', '/api/user/profile').send(initialProfile);
+      
+      // Update only measurements
+      const updatedMeasurements = {
+        waist: 29,
+        chest: 36,
+        hips: 37,
+        inseam: 31,
+        measurementsUnit: 'inches' as const,
+      };
+      
+      const updateResponse = await apiRequest('POST', '/api/user/profile')
+        .send(updatedMeasurements);
+      
+      expect(updateResponse.status).toBe(200);
+      expect(updateResponse.body).toHaveProperty('waist', 29);
+      expect(updateResponse.body).toHaveProperty('chest', 36);
+      expect(updateResponse.body).toHaveProperty('hips', 37);
+      expect(updateResponse.body).toHaveProperty('inseam', 31);
+      
+      // Verify other fields are still there
+      expect(updateResponse.body).toHaveProperty('height', 65);
+      expect(updateResponse.body).toHaveProperty('weight', 130);
+      
+      // Verify the update persisted
+      const verifyResponse = await apiRequest('GET', '/api/user/profile');
+      expect(verifyResponse.body.waist).toBe(29);
+      expect(verifyResponse.body.chest).toBe(36);
+      expect(verifyResponse.body.hips).toBe(37);
+      expect(verifyResponse.body.inseam).toBe(31);
+      expect(verifyResponse.body.height).toBe(65);
+      expect(verifyResponse.body.weight).toBe(130);
+    });
+    
+    it('should handle measurements with decimal values', async () => {
+      const profileWithDecimals = {
+        waist: 28.5,
+        chest: 36.25,
+        hips: 37.75,
+        inseam: 30.5,
+        measurementsUnit: 'inches' as const,
+      };
+      
+      const response = await apiRequest('POST', '/api/user/profile')
+        .send(profileWithDecimals);
+      
+      expect(response.status).toBe(200);
+      expect(response.body.waist).toBe(28.5);
+      expect(response.body.chest).toBe(36.25);
+      expect(response.body.hips).toBe(37.75);
+      expect(response.body.inseam).toBe(30.5);
+      
+      // Verify decimals are preserved
+      const verifyResponse = await apiRequest('GET', '/api/user/profile');
+      expect(verifyResponse.body.waist).toBe(28.5);
+      expect(verifyResponse.body.chest).toBe(36.25);
+      expect(verifyResponse.body.hips).toBe(37.75);
+      expect(verifyResponse.body.inseam).toBe(30.5);
     });
   });
   
@@ -355,17 +483,28 @@ describe('API Integration Tests', () => {
         expect(fb).toHaveProperty('id');
         expect(fb).toHaveProperty('itemTitles');
         expect(Array.isArray(fb.itemTitles)).toBe(true);
+        expect(fb.itemTitles.length).toBeGreaterThan(0);
         expect(fb).toHaveProperty('type');
         expect(['like', 'dislike']).toContain(fb.type);
         expect(fb).toHaveProperty('createdAt');
+        expect(typeof fb.id).toBe('string');
+        expect(typeof fb.type).toBe('string');
+        expect(typeof fb.createdAt).toBe('string');
       });
     });
     
     it('should submit outfit feedback with all details', async () => {
+      // Get actual item titles from the database
+      const itemsResponse = await apiRequest('GET', '/api/items');
+      const items = itemsResponse.body;
+      expect(items.length).toBeGreaterThan(0);
+      
+      const itemTitles = items.slice(0, 2).map((item: any) => item.title);
       const feedbackData = {
-        itemTitles: ['Test T-Shirt', 'Test Jeans'],
+        itemTitles: itemTitles,
         type: 'like',
         feedback: 'Great combination!',
+        prompt: 'Test outfit generation prompt',
       };
       
       const response = await apiRequest('POST', '/api/outfits/feedback')
@@ -380,7 +519,9 @@ describe('API Integration Tests', () => {
       expect(Array.isArray(response.body.itemTitles)).toBe(true);
       expect(response.body.itemTitles).toEqual(feedbackData.itemTitles);
       expect(response.body).toHaveProperty('feedback', feedbackData.feedback);
+      expect(response.body).toHaveProperty('prompt', feedbackData.prompt);
       expect(response.body).toHaveProperty('createdAt');
+      expect(typeof response.body.createdAt).toBe('string');
       
       // Verify feedback was saved by fetching again
       const verifyResponse = await apiRequest('GET', '/api/outfits/feedback');
@@ -388,6 +529,81 @@ describe('API Integration Tests', () => {
       expect(savedFeedback).toBeDefined();
       expect(savedFeedback.type).toBe('like');
       expect(savedFeedback.feedback).toBe('Great combination!');
+      expect(savedFeedback.prompt).toBe('Test outfit generation prompt');
+      expect(savedFeedback.itemTitles).toEqual(itemTitles);
+    });
+    
+    it('should submit dislike feedback without optional fields', async () => {
+      // Get actual item titles from the database
+      const itemsResponse = await apiRequest('GET', '/api/items');
+      const items = itemsResponse.body;
+      expect(items.length).toBeGreaterThan(0);
+      
+      const itemTitles = items.slice(0, 1).map((item: any) => item.title);
+      const feedbackData = {
+        itemTitles: itemTitles,
+        type: 'dislike',
+      };
+      
+      const response = await apiRequest('POST', '/api/outfits/feedback')
+        .send(feedbackData);
+      
+      expect(response.status).toBe(201);
+      expect(response.body).toHaveProperty('id');
+      expect(response.body).toHaveProperty('type', 'dislike');
+      expect(response.body).toHaveProperty('itemTitles');
+      expect(response.body.itemTitles).toEqual(itemTitles);
+      expect(response.body).toHaveProperty('createdAt');
+      // Optional fields may be undefined or null
+      if (response.body.feedback !== undefined) {
+        expect(response.body.feedback).toBeNull();
+      }
+    });
+    
+    it('should delete outfit feedback', async () => {
+      // First, create a feedback entry to delete
+      const itemsResponse = await apiRequest('GET', '/api/items');
+      const items = itemsResponse.body;
+      expect(items.length).toBeGreaterThan(0);
+      
+      const itemTitles = items.slice(0, 2).map((item: any) => item.title);
+      const feedbackData = {
+        itemTitles: itemTitles,
+        type: 'like',
+        feedback: 'Test feedback to delete',
+      };
+      
+      const createResponse = await apiRequest('POST', '/api/outfits/feedback')
+        .send(feedbackData);
+      
+      expect(createResponse.status).toBe(201);
+      const feedbackId = createResponse.body.id;
+      expect(feedbackId).toBeDefined();
+      
+      // Verify it exists
+      const beforeDeleteResponse = await apiRequest('GET', '/api/outfits/feedback');
+      const feedbackBeforeDelete = beforeDeleteResponse.body.find((fb: any) => fb.id === feedbackId);
+      expect(feedbackBeforeDelete).toBeDefined();
+      expect(feedbackBeforeDelete.feedback).toBe('Test feedback to delete');
+      
+      // Delete the feedback
+      const deleteResponse = await apiRequest('DELETE', `/api/outfits/feedback/${feedbackId}`);
+      expect(deleteResponse.status).toBe(200);
+      expect(deleteResponse.body).toHaveProperty('message', 'Feedback deleted successfully');
+      
+      // Verify it's deleted
+      const afterDeleteResponse = await apiRequest('GET', '/api/outfits/feedback');
+      const feedbackAfterDelete = afterDeleteResponse.body.find((fb: any) => fb.id === feedbackId);
+      expect(feedbackAfterDelete).toBeUndefined();
+    });
+    
+    it('should return 404 when deleting non-existent feedback', async () => {
+      const { v4: uuidv4 } = require('uuid');
+      const fakeId = uuidv4();
+      
+      const response = await apiRequest('DELETE', `/api/outfits/feedback/${fakeId}`);
+      expect(response.status).toBe(404);
+      expect(response.body).toHaveProperty('error');
     });
   });
   

@@ -166,6 +166,10 @@ export async function initializeSchema(): Promise<void> {
       weight_unit TEXT,
       style_preferences TEXT,
       favorite_brands TEXT,
+      waist NUMERIC,
+      chest NUMERIC,
+      hips NUMERIC,
+      inseam NUMERIC,
       shoe_size TEXT,
       measurements_unit TEXT,
       hair_color TEXT,
@@ -222,6 +226,30 @@ export async function initializeSchema(): Promise<void> {
   `;
 
   await query(createTablesQuery);
+  
+  // Add measurement columns if they don't exist (migration for existing databases)
+  try {
+    await query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_profiles' AND column_name = 'waist') THEN
+          ALTER TABLE user_profiles ADD COLUMN waist NUMERIC;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_profiles' AND column_name = 'chest') THEN
+          ALTER TABLE user_profiles ADD COLUMN chest NUMERIC;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_profiles' AND column_name = 'hips') THEN
+          ALTER TABLE user_profiles ADD COLUMN hips NUMERIC;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_profiles' AND column_name = 'inseam') THEN
+          ALTER TABLE user_profiles ADD COLUMN inseam NUMERIC;
+        END IF;
+      END $$;
+    `);
+  } catch (error) {
+    // Ignore errors if columns already exist
+    console.log('Migration check for measurement columns:', error instanceof Error ? error.message : String(error));
+  }
 }
 
 // Helper functions
@@ -361,12 +389,16 @@ export async function getProfile(userId: string): Promise<UserProfile | null> {
   const row = result.rows[0];
   
   return {
-    height: row.height ?? undefined,
-    weight: row.weight ?? undefined,
+    height: row.height != null ? Number(row.height) : undefined,
+    weight: row.weight != null ? Number(row.weight) : undefined,
     heightUnit: row.height_unit ?? undefined,
     weightUnit: row.weight_unit ?? undefined,
     stylePreferences: row.style_preferences ?? undefined,
     brands: row.favorite_brands ? JSON.parse(row.favorite_brands) : undefined,
+    waist: row.waist != null ? Number(row.waist) : undefined,
+    chest: row.chest != null ? Number(row.chest) : undefined,
+    hips: row.hips != null ? Number(row.hips) : undefined,
+    inseam: row.inseam != null ? Number(row.inseam) : undefined,
     shoeSize: row.shoe_size ?? undefined,
     measurementsUnit: row.measurements_unit ?? undefined,
     hairColor: row.hair_color ?? undefined,
@@ -377,8 +409,8 @@ export async function getProfile(userId: string): Promise<UserProfile | null> {
 
 export async function upsertProfile(userId: string, profile: UserProfile) {
   await query(
-    `INSERT INTO user_profiles (user_id, height, weight, height_unit, weight_unit, style_preferences, favorite_brands, shoe_size, measurements_unit, hair_color, hair_texture, skin_color)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `INSERT INTO user_profiles (user_id, height, weight, height_unit, weight_unit, style_preferences, favorite_brands, waist, chest, hips, inseam, shoe_size, measurements_unit, hair_color, hair_texture, skin_color)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      ON CONFLICT(user_id) DO UPDATE SET
        height = excluded.height,
        weight = excluded.weight,
@@ -386,6 +418,10 @@ export async function upsertProfile(userId: string, profile: UserProfile) {
        weight_unit = excluded.weight_unit,
        style_preferences = excluded.style_preferences,
        favorite_brands = excluded.favorite_brands,
+       waist = excluded.waist,
+       chest = excluded.chest,
+       hips = excluded.hips,
+       inseam = excluded.inseam,
        shoe_size = excluded.shoe_size,
        measurements_unit = excluded.measurements_unit,
        hair_color = excluded.hair_color,
@@ -399,6 +435,10 @@ export async function upsertProfile(userId: string, profile: UserProfile) {
       profile.weightUnit ?? null,
       profile.stylePreferences ?? null,
       profile.brands ? JSON.stringify(profile.brands) : null,
+      profile.waist ?? null,
+      profile.chest ?? null,
+      profile.hips ?? null,
+      profile.inseam ?? null,
       profile.shoeSize ?? null,
       profile.measurementsUnit ?? null,
       profile.hairColor ?? null,

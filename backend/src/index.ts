@@ -723,22 +723,26 @@ app.post('/api/user/profile', async (req, res) => {
       hairColor, hairTexture, skinColor
     } = req.body;
     
+    // Get existing profile to preserve fields that aren't being updated
+    const existingProfile = await db.getProfile(userId) || {};
+    
+    // Merge updates with existing profile (only update fields that are provided)
     const updatedProfile: UserProfile = {
-      height: height ? Number(height) : undefined,
-      weight: weight ? Number(weight) : undefined,
-      heightUnit: heightUnit || 'inches',
-      weightUnit: weightUnit || 'lbs',
-      stylePreferences: stylePreferences || undefined,
-      brands: brands && Array.isArray(brands) ? brands : undefined,
-      waist: waist ? Number(waist) : undefined,
-      chest: chest ? Number(chest) : undefined,
-      hips: hips ? Number(hips) : undefined,
-      inseam: inseam ? Number(inseam) : undefined,
-      shoeSize: shoeSize || undefined,
-      measurementsUnit: measurementsUnit || 'inches',
-      hairColor: hairColor || undefined,
-      hairTexture: hairTexture || undefined,
-      skinColor: skinColor || undefined
+      height: height !== undefined ? Number(height) : existingProfile.height,
+      weight: weight !== undefined ? Number(weight) : existingProfile.weight,
+      heightUnit: heightUnit !== undefined ? heightUnit : (existingProfile.heightUnit || 'inches'),
+      weightUnit: weightUnit !== undefined ? weightUnit : (existingProfile.weightUnit || 'lbs'),
+      stylePreferences: stylePreferences !== undefined ? stylePreferences : existingProfile.stylePreferences,
+      brands: brands !== undefined ? (Array.isArray(brands) ? brands : undefined) : existingProfile.brands,
+      waist: waist !== undefined ? Number(waist) : existingProfile.waist,
+      chest: chest !== undefined ? Number(chest) : existingProfile.chest,
+      hips: hips !== undefined ? Number(hips) : existingProfile.hips,
+      inseam: inseam !== undefined ? Number(inseam) : existingProfile.inseam,
+      shoeSize: shoeSize !== undefined ? shoeSize : existingProfile.shoeSize,
+      measurementsUnit: measurementsUnit !== undefined ? measurementsUnit : (existingProfile.measurementsUnit || 'inches'),
+      hairColor: hairColor !== undefined ? hairColor : existingProfile.hairColor,
+      hairTexture: hairTexture !== undefined ? hairTexture : existingProfile.hairTexture,
+      skinColor: skinColor !== undefined ? skinColor : existingProfile.skinColor
     };
     
     // Save to database
@@ -852,7 +856,6 @@ app.delete('/api/outfits/saved/:id', async (req, res) => {
 app.post('/api/outfits/feedback', async (req, res) => {
   try {
     const userId = getUserFromRequest(req);
-    const userData = await getUserData(userId);
     const { itemTitles, type, feedback, prompt } = req.body;
     
     if (!itemTitles || !Array.isArray(itemTitles) || itemTitles.length === 0) {
@@ -879,6 +882,7 @@ app.post('/api/outfits/feedback', async (req, res) => {
     res.status(201).json(newFeedback);
   } catch (error) {
     console.error('Error saving feedback:', error);
+    console.error('Error details:', error instanceof Error ? error.message : String(error));
     res.status(500).json({ error: 'Failed to save feedback' });
   }
 });

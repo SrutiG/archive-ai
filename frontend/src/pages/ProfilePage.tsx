@@ -17,6 +17,13 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
   const [profileLoading, setProfileLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Store raw string values for measurement inputs to allow partial decimal input
+  const [measurementInputs, setMeasurementInputs] = useState<{
+    waist?: string;
+    chest?: string;
+    hips?: string;
+    inseam?: string;
+  }>({});
 
   const fetchProfile = async () => {
     setProfileLoading(true);
@@ -36,6 +43,22 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
       fetchProfile();
     }
   }, [currentUser?.id]);
+
+  // Sync measurement inputs when profile loads
+  useEffect(() => {
+    if (profile.waist !== undefined) {
+      setMeasurementInputs(prev => ({ ...prev, waist: String(profile.waist) }));
+    }
+    if (profile.chest !== undefined) {
+      setMeasurementInputs(prev => ({ ...prev, chest: String(profile.chest) }));
+    }
+    if (profile.hips !== undefined) {
+      setMeasurementInputs(prev => ({ ...prev, hips: String(profile.hips) }));
+    }
+    if (profile.inseam !== undefined) {
+      setMeasurementInputs(prev => ({ ...prev, inseam: String(profile.inseam) }));
+    }
+  }, [profile.waist, profile.chest, profile.hips, profile.inseam]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,11 +157,38 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
               <label htmlFor="waist">Waist</label>
               <div className="input-with-unit">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="waist"
-                  step="0.5"
-                  value={profile.waist || ''}
-                  onChange={(e) => setProfile({ ...profile, waist: e.target.value ? Number(e.target.value) : undefined })}
+                  value={measurementInputs.waist ?? (profile.waist !== undefined ? String(profile.waist) : '')}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    // Allow empty, numbers, and partial decimals (e.g., "28.", "28.5")
+                    if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                      setMeasurementInputs(prev => ({ ...prev, waist: value }));
+                      if (value === '' || value === '-' || value === '.') {
+                        setProfile({ ...profile, waist: undefined });
+                      } else {
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue)) {
+                          setProfile({ ...profile, waist: numValue });
+                        }
+                      }
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    if (value === '' || value === '-' || value === '.') {
+                      setMeasurementInputs(prev => ({ ...prev, waist: undefined }));
+                      setProfile({ ...profile, waist: undefined });
+                    } else {
+                      const numValue = parseFloat(value);
+                      if (!isNaN(numValue)) {
+                        setMeasurementInputs(prev => ({ ...prev, waist: String(numValue) }));
+                        setProfile({ ...profile, waist: numValue });
+                      }
+                    }
+                  }}
                   placeholder="28"
                   disabled={loading}
                 />
@@ -157,11 +207,38 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
               <label htmlFor="chest">Chest</label>
               <div className="input-with-unit">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="chest"
-                  step="0.5"
-                  value={profile.chest || ''}
-                  onChange={(e) => setProfile({ ...profile, chest: e.target.value ? Number(e.target.value) : undefined })}
+                  value={measurementInputs.chest ?? (profile.chest !== undefined ? String(profile.chest) : '')}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    // Allow empty, numbers, and partial decimals (e.g., "36.", "36.5")
+                    if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                      setMeasurementInputs(prev => ({ ...prev, chest: value }));
+                      if (value === '' || value === '-' || value === '.') {
+                        setProfile({ ...profile, chest: undefined });
+                      } else {
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue)) {
+                          setProfile({ ...profile, chest: numValue });
+                        }
+                      }
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    if (value === '' || value === '-' || value === '.') {
+                      setMeasurementInputs(prev => ({ ...prev, chest: undefined }));
+                      setProfile({ ...profile, chest: undefined });
+                    } else {
+                      const numValue = parseFloat(value);
+                      if (!isNaN(numValue)) {
+                        setMeasurementInputs(prev => ({ ...prev, chest: String(numValue) }));
+                        setProfile({ ...profile, chest: numValue });
+                      }
+                    }
+                  }}
                   placeholder="36"
                   disabled={loading}
                 />
@@ -180,11 +257,38 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
               <label htmlFor="hips">Hips</label>
               <div className="input-with-unit">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="hips"
-                  step="0.5"
-                  value={profile.hips || ''}
-                  onChange={(e) => setProfile({ ...profile, hips: e.target.value ? Number(e.target.value) : undefined })}
+                  value={measurementInputs.hips ?? (profile.hips !== undefined ? String(profile.hips) : '')}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    // Allow empty, numbers, and partial decimals (e.g., "36.", "36.5")
+                    if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                      setMeasurementInputs(prev => ({ ...prev, hips: value }));
+                      if (value === '' || value === '-' || value === '.') {
+                        setProfile({ ...profile, hips: undefined });
+                      } else {
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue)) {
+                          setProfile({ ...profile, hips: numValue });
+                        }
+                      }
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    if (value === '' || value === '-' || value === '.') {
+                      setMeasurementInputs(prev => ({ ...prev, hips: undefined }));
+                      setProfile({ ...profile, hips: undefined });
+                    } else {
+                      const numValue = parseFloat(value);
+                      if (!isNaN(numValue)) {
+                        setMeasurementInputs(prev => ({ ...prev, hips: String(numValue) }));
+                        setProfile({ ...profile, hips: numValue });
+                      }
+                    }
+                  }}
                   placeholder="36"
                   disabled={loading}
                 />
@@ -203,11 +307,38 @@ const ProfilePage: React.FC<ProfilePageProps> = ({ apiUrl: _apiUrl }) => {
               <label htmlFor="inseam">Inseam</label>
               <div className="input-with-unit">
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   id="inseam"
-                  step="0.5"
-                  value={profile.inseam || ''}
-                  onChange={(e) => setProfile({ ...profile, inseam: e.target.value ? Number(e.target.value) : undefined })}
+                  value={measurementInputs.inseam ?? (profile.inseam !== undefined ? String(profile.inseam) : '')}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    // Allow empty, numbers, and partial decimals (e.g., "29.", "29.5")
+                    if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                      setMeasurementInputs(prev => ({ ...prev, inseam: value }));
+                      if (value === '' || value === '-' || value === '.') {
+                        setProfile({ ...profile, inseam: undefined });
+                      } else {
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue)) {
+                          setProfile({ ...profile, inseam: numValue });
+                        }
+                      }
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const value = e.target.value.trim();
+                    if (value === '' || value === '-' || value === '.') {
+                      setMeasurementInputs(prev => ({ ...prev, inseam: undefined }));
+                      setProfile({ ...profile, inseam: undefined });
+                    } else {
+                      const numValue = parseFloat(value);
+                      if (!isNaN(numValue)) {
+                        setMeasurementInputs(prev => ({ ...prev, inseam: String(numValue) }));
+                        setProfile({ ...profile, inseam: numValue });
+                      }
+                    }
+                  }}
                   placeholder="29"
                   disabled={loading}
                 />

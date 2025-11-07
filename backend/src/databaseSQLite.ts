@@ -53,6 +53,10 @@ db.exec(`
     weight_unit TEXT,
     style_preferences TEXT,
     favorite_brands TEXT,
+    waist REAL,
+    chest REAL,
+    hips REAL,
+    inseam REAL,
     shoe_size TEXT,
     measurements_unit TEXT,
     hair_color TEXT,
@@ -108,6 +112,28 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_explore_suggestions_user ON explore_suggestions(user_id);
 `);
 
+// Migration: Add measurement columns if they don't exist (for existing databases)
+try {
+  const tableInfo = db.prepare("PRAGMA table_info(user_profiles)").all() as any[];
+  const columnNames = tableInfo.map(col => col.name);
+  
+  if (!columnNames.includes('waist')) {
+    db.exec('ALTER TABLE user_profiles ADD COLUMN waist REAL');
+  }
+  if (!columnNames.includes('chest')) {
+    db.exec('ALTER TABLE user_profiles ADD COLUMN chest REAL');
+  }
+  if (!columnNames.includes('hips')) {
+    db.exec('ALTER TABLE user_profiles ADD COLUMN hips REAL');
+  }
+  if (!columnNames.includes('inseam')) {
+    db.exec('ALTER TABLE user_profiles ADD COLUMN inseam REAL');
+  }
+} catch (error) {
+  // Ignore errors if columns already exist or table doesn't exist
+  console.log('Migration check for measurement columns:', error instanceof Error ? error.message : String(error));
+}
+
 // Prepared statements for better performance
 const stmts = {
   // Users
@@ -132,8 +158,8 @@ const stmts = {
   // User profiles
   getProfile: db.prepare('SELECT * FROM user_profiles WHERE user_id = ?'),
   upsertProfile: db.prepare(`
-    INSERT INTO user_profiles (user_id, height, weight, height_unit, weight_unit, style_preferences, favorite_brands, shoe_size, measurements_unit, hair_color, hair_texture, skin_color)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO user_profiles (user_id, height, weight, height_unit, weight_unit, style_preferences, favorite_brands, waist, chest, hips, inseam, shoe_size, measurements_unit, hair_color, hair_texture, skin_color)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET
       height = excluded.height,
       weight = excluded.weight,
@@ -141,6 +167,10 @@ const stmts = {
       weight_unit = excluded.weight_unit,
       style_preferences = excluded.style_preferences,
       favorite_brands = excluded.favorite_brands,
+      waist = excluded.waist,
+      chest = excluded.chest,
+      hips = excluded.hips,
+      inseam = excluded.inseam,
       shoe_size = excluded.shoe_size,
       measurements_unit = excluded.measurements_unit,
       hair_color = excluded.hair_color,
@@ -289,6 +319,10 @@ export function getProfile(userId: string): UserProfile | null {
     weightUnit: row.weight_unit ?? undefined,
     stylePreferences: row.style_preferences ?? undefined,
     brands: row.favorite_brands ? JSON.parse(row.favorite_brands) : undefined,
+    waist: row.waist ?? undefined,
+    chest: row.chest ?? undefined,
+    hips: row.hips ?? undefined,
+    inseam: row.inseam ?? undefined,
     shoeSize: row.shoe_size ?? undefined,
     measurementsUnit: row.measurements_unit ?? undefined,
     hairColor: row.hair_color ?? undefined,
@@ -306,6 +340,10 @@ export function upsertProfile(userId: string, profile: UserProfile) {
     profile.weightUnit ?? null,
     profile.stylePreferences ?? null,
     profile.brands ? JSON.stringify(profile.brands) : null,
+    profile.waist ?? null,
+    profile.chest ?? null,
+    profile.hips ?? null,
+    profile.inseam ?? null,
     profile.shoeSize ?? null,
     profile.measurementsUnit ?? null,
     profile.hairColor ?? null,
