@@ -3,9 +3,10 @@ import './WardrobePage.css';
 import { WardrobeItem } from '../App';
 import ItemInput from '../components/ItemInput';
 import ItemList from '../components/ItemList';
-import { PageHeader } from '../design-system';
+import { Button, PageHeader } from '../design-system';
 import { apiGet, apiPost } from '../utils/api';
 import { useUser } from '../contexts/UserContext';
+import EasyItemInputModal from '../components/EasyItemInputModal';
 
 interface WardrobePageProps {
   apiUrl: string;
@@ -16,6 +17,7 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [itemsLoading, setItemsLoading] = useState(false);
+  const [showQuickEntryModal, setShowQuickEntryModal] = useState(false);
 
   const fetchItems = async () => {
     setItemsLoading(true);
@@ -65,6 +67,12 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
         description="Manage your wardrobe items. Add, edit, or delete items organized by category."
       />
 
+      <div className="WardrobePage__actions">
+        <Button variant="secondary" size="medium" onClick={() => setShowQuickEntryModal(true)}>
+          Add items from text
+        </Button>
+      </div>
+
       <ItemInput 
         onItemAdded={handleItemAdded} 
         loading={loading}
@@ -85,6 +93,14 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
           apiUrl={apiUrl}
         />
       )}
+
+      <EasyItemInputModal
+        isOpen={showQuickEntryModal}
+        onClose={() => setShowQuickEntryModal(false)}
+        onItemsCreated={() => {
+          fetchItems();
+        }}
+      />
     </div>
   );
 };

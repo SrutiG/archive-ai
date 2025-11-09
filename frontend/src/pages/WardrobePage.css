@@ -8,6 +8,12 @@
   /* Using global page-header styles */
 }
 
+.WardrobePage__actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 2rem;
+}
+
 .loading-container {
   display: flex;
   flex-direction: column;
@@ -46,6 +52,11 @@
     max-width: 100%;
     margin: 0;
     padding: 2rem 1.5rem 3rem 1.5rem;
+  }
+
+  .WardrobePage__actions {
+    justify-content: flex-start;
+    margin-bottom: 1.5rem;
   }
   
   .loading-container {

@@ -45,7 +45,7 @@ const CATEGORY_ORDER = [
   {
     key: 'tops',
     label: 'Top',
-    keywords: ['top', 'tops', 'shirt', 'blouse', 'sweater', 'hoodie', 'coat', 'jacket', 'outerwear', 'blazer', 'cardigan', 'dress'],
+    keywords: ['top', 'tops', 'shirt', 'blouse', 'sweater', 'hoodie', 'coat', 'jacket', 'outerwear', 'blazer', 'cardigan', 'dress', 'sweatshirt', 'pullover', 'tee', 't-shirt'],
   },
   {
     key: 'bottoms',
@@ -63,6 +63,167 @@ const CATEGORY_ORDER = [
     keywords: ['accessory', 'accessories', 'bag', 'belt', 'hat', 'scarf', 'jewelry', 'watch', 'tie', 'glove', 'gloves'],
   },
 ] as const;
+
+const CATEGORY_DIRECT_MAP: Record<string, typeof CATEGORY_ORDER[number]['key']> = {
+  Tops: 'tops',
+  Bottoms: 'bottoms',
+  Dresses: 'bottoms',
+  Outerwear: 'tops',
+  Shoes: 'shoes',
+  Accessories: 'accessories',
+  Bags: 'accessories',
+  Jewelry: 'accessories',
+  Activewear: 'tops',
+  Underwear: 'bottoms',
+};
+
+const CATEGORY_BUCKET_MAP: Record<string, typeof CATEGORY_ORDER[number]['key']> = {
+  tops: 'tops',
+  top: 'tops',
+  outerwear: 'tops',
+  coat: 'tops',
+  coats: 'tops',
+  jacket: 'tops',
+  jackets: 'tops',
+  blazer: 'tops',
+  blazers: 'tops',
+  cardigan: 'tops',
+  cardigans: 'tops',
+  sweater: 'tops',
+  sweaters: 'tops',
+  sweatshirt: 'tops',
+  sweatshirts: 'tops',
+  hoodie: 'tops',
+  hoodies: 'tops',
+  shirt: 'tops',
+  shirts: 'tops',
+  blouse: 'tops',
+  blouses: 'tops',
+  tee: 'tops',
+  tees: 'tops',
+  tshirt: 'tops',
+  tshirts: 'tops',
+  't-shirt': 'tops',
+  't-shirts': 'tops',
+  dress: 'tops',
+  dresses: 'tops',
+  activewear: 'tops',
+
+  bottom: 'bottoms',
+  bottoms: 'bottoms',
+  pant: 'bottoms',
+  pants: 'bottoms',
+  trouser: 'bottoms',
+  trousers: 'bottoms',
+  jean: 'bottoms',
+  jeans: 'bottoms',
+  short: 'bottoms',
+  shorts: 'bottoms',
+  skirt: 'bottoms',
+  skirts: 'bottoms',
+  legging: 'bottoms',
+  leggings: 'bottoms',
+  jogger: 'bottoms',
+  joggers: 'bottoms',
+
+  shoe: 'shoes',
+  shoes: 'shoes',
+  boot: 'shoes',
+  boots: 'shoes',
+  sneaker: 'shoes',
+  sneakers: 'shoes',
+  heel: 'shoes',
+  heels: 'shoes',
+  flat: 'shoes',
+  flats: 'shoes',
+  loafer: 'shoes',
+  loafers: 'shoes',
+  sandal: 'shoes',
+  sandals: 'shoes',
+  mule: 'shoes',
+  mules: 'shoes',
+
+  accessory: 'accessories',
+  accessories: 'accessories',
+  bag: 'accessories',
+  bags: 'accessories',
+  belt: 'accessories',
+  belts: 'accessories',
+  hat: 'accessories',
+  hats: 'accessories',
+  scarf: 'accessories',
+  scarves: 'accessories',
+  jewelry: 'accessories',
+  bracelet: 'accessories',
+  bracelets: 'accessories',
+  necklace: 'accessories',
+  necklaces: 'accessories',
+  earring: 'accessories',
+  earrings: 'accessories',
+  ring: 'accessories',
+  rings: 'accessories',
+  watch: 'accessories',
+  watches: 'accessories',
+  tie: 'accessories',
+  ties: 'accessories',
+  glove: 'accessories',
+  gloves: 'accessories',
+};
+
+const stripLeadingMarkers = (value: string): string =>
+  value.replace(/^[\s]*[-•*·+]+[\s]*/, '');
+
+const normalizeTitleWhitespace = (value: string): string =>
+  value.replace(/\s+/g, ' ').trim();
+
+const normalizeTitleForMatch = (value: string): string =>
+  normalizeTitleWhitespace(stripLeadingMarkers(value)).toLowerCase();
+
+const formatTitleForDisplay = (value: string): string =>
+  normalizeTitleWhitespace(stripLeadingMarkers(value));
+
+const resolveCategoryBucket = (item: WardrobeItem | undefined, title: string): typeof CATEGORY_ORDER[number]['key'] => {
+  const searchValues: string[] = [];
+
+  if (item?.category) {
+    if (CATEGORY_DIRECT_MAP[item.category]) {
+      return CATEGORY_DIRECT_MAP[item.category];
+    }
+    const normalized = item.category.toLowerCase();
+    searchValues.push(normalized);
+    searchValues.push(...normalized.split(/[\s/,-]+/));
+  }
+
+  const normalizedTitle = title.toLowerCase();
+  searchValues.push(normalizedTitle);
+  searchValues.push(...normalizedTitle.split(/[\s/,-]+/));
+
+  for (const value of searchValues) {
+    if (!value) continue;
+    if (CATEGORY_BUCKET_MAP[value]) {
+      return CATEGORY_BUCKET_MAP[value];
+    }
+
+    for (const keyword in CATEGORY_BUCKET_MAP) {
+      if (value.includes(keyword)) {
+        return CATEGORY_BUCKET_MAP[keyword];
+      }
+    }
+  }
+
+  // Fallback to keyword list ordering
+  for (const category of CATEGORY_ORDER) {
+    if (
+      category.keywords.some(
+        (keyword) => normalizedTitle.includes(keyword) || (item?.category || '').toLowerCase().includes(keyword)
+      )
+    ) {
+      return category.key;
+    }
+  }
+
+  return 'accessories';
+};
 
 const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   const { currentUser } = useUser();
@@ -565,10 +726,22 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
           <SectionHeader title={`Saved Outfits (${savedOutfits.length})`} />
           <div className="outfits-grid">
             {savedOutfits.map((outfit) => {
-              const outfitItemData = (outfit.itemTitles || []).map((itemTitle: string) => ({
-                title: itemTitle,
-                item: items.find((i) => i.title === itemTitle),
-              }));
+              const outfitItemData = (outfit.itemTitles || []).map((itemTitle: string) => {
+                const normalizedKey = normalizeTitleForMatch(itemTitle);
+                const matchedItem = items.find(
+                  (i) => normalizeTitleForMatch(i.title) === normalizedKey
+                );
+
+                const displayTitle = matchedItem
+                  ? matchedItem.title
+                  : formatTitleForDisplay(itemTitle);
+
+                return {
+                  title: displayTitle,
+                  item: matchedItem,
+                  originalTitle: itemTitle,
+                };
+              });
               const isContextExpanded = expandedContexts[outfit.id] ?? false;
               const hasContextOverflow = contextOverflow[outfit.id] ?? false;
 
@@ -578,15 +751,7 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
               }));
 
               outfitItemData.forEach(({ title, item }) => {
-                const normalizedCategory = (item?.category || '').toLowerCase();
-                const normalizedTitle = title.toLowerCase();
-                const matchedCategory = CATEGORY_ORDER.find((category) =>
-                  category.keywords.some((keyword) =>
-                    normalizedCategory.includes(keyword) || normalizedTitle.includes(keyword)
-                  )
-                );
-
-                const bucketKey = matchedCategory ? matchedCategory.key : 'accessories';
+                const bucketKey = resolveCategoryBucket(item, title);
                 const targetBucket = categoryBuckets.find((bucket) => bucket.key === bucketKey);
 
                 if (targetBucket) {
