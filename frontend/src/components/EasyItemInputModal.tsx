@@ -167,7 +167,11 @@ const EasyItemInputModal: React.FC<EasyItemInputModalProps> = ({ isOpen, onClose
               {successState.createdItems.map((item) => (
                 <li key={item.id}>
                   <span className="easy-item-modal__result-title">{item.title}</span>
-                  <span className="easy-item-modal__result-meta">{item.category}</span>
+                  <span className="easy-item-modal__result-meta">
+                    {item.subCategory && item.subCategory.toLowerCase() !== 'other'
+                      ? item.subCategory
+                      : item.category}
+                  </span>
                   {item.description && <span className="easy-item-modal__result-description">{item.description}</span>}
                 </li>
               ))}

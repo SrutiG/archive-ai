@@ -1,6 +1,6 @@
 import { Pool, QueryResult } from 'pg';
 import dotenv from 'dotenv';
-import { WardrobeItem, UserProfile, OutfitFeedback, ExploreSuggestion } from './index';
+import { WardrobeItem, UserProfile, OutfitFeedback, ExploreSuggestion, SavedOutfit } from './index';
 
 dotenv.config();
 
@@ -130,6 +130,157 @@ async function query(text: string, params?: any[], retryCount = 0): Promise<Quer
   }
 }
 
+function safeParseStringArray(value: unknown): string[] {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map(item => (typeof item === 'string' ? item : item != null ? String(item) : ''))
+      .filter(item => item.length > 0);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map(item => (typeof item === 'string' ? item : item != null ? String(item) : ''))
+          .filter(item => item.length > 0);
+      }
+    } catch (error) {
+      // If parsing fails, fall back to treating as a single string value
+    }
+    return [trimmed];
+  }
+  return [];
+}
+
+function stripLeadingMarkers(value: string): string {
+  return value.replace(/^[\s]*[-•*·+]+[\s]*/, '');
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeTitleKey(value: string): string {
+  return normalizeWhitespace(stripLeadingMarkers(value || '')).toLowerCase();
+}
+
+type UserItemIndex = {
+  byTitle: Map<string, { id: string; title: string }>;
+  byId: Map<string, { id: string; title: string }>;
+};
+
+async function ensureUserItemIndex(
+  userId: string,
+  cache: Map<string, UserItemIndex>
+): Promise<UserItemIndex> {
+  if (cache.has(userId)) {
+    return cache.get(userId)!;
+  }
+  const itemsResult = await query('SELECT id, title FROM wardrobe_items WHERE user_id = $1', [userId]);
+  const byTitle = new Map<string, { id: string; title: string }>();
+  const byId = new Map<string, { id: string; title: string }>();
+  itemsResult.rows.forEach(item => {
+    const normalized = normalizeTitleKey(item.title);
+    if (!byTitle.has(normalized)) {
+      byTitle.set(normalized, { id: item.id, title: item.title });
+    }
+    byId.set(item.id, { id: item.id, title: item.title });
+  });
+  const index: UserItemIndex = { byTitle, byId };
+  cache.set(userId, index);
+  return index;
+}
+
+async function resolveItemIdsForUser(
+  userId: string,
+  titles: string[],
+  cache: Map<string, UserItemIndex>
+): Promise<{ ids: string[]; titles: string[] } | null> {
+  if (titles.length === 0) {
+    return { ids: [], titles: [] };
+  }
+
+  const index = await ensureUserItemIndex(userId, cache);
+  const resolvedIds: string[] = [];
+  const resolvedTitles: string[] = [];
+
+  for (const rawTitle of titles) {
+    const normalized = normalizeTitleKey(rawTitle);
+    const match = index.byTitle.get(normalized);
+    if (match) {
+      resolvedIds.push(match.id);
+      resolvedTitles.push(match.title);
+      continue;
+    }
+
+    console.warn(
+      `[Migration] Unable to resolve outfit item title "${rawTitle}" for user ${userId}`
+    );
+    return null;
+  }
+
+  return { ids: resolvedIds, titles: resolvedTitles };
+}
+
+export async function backfillOutfitItemIds(): Promise<void> {
+  const userItemsCache = new Map<string, UserItemIndex>();
+
+  const processRows = async (rows: any[], tableName: 'saved_outfits' | 'outfit_feedback') => {
+    for (const row of rows) {
+      const titles = safeParseStringArray(row.item_titles);
+      if (titles.length === 0) {
+        continue;
+      }
+
+      const existingIds = safeParseStringArray(row.item_ids);
+      if (existingIds.length === titles.length && titles.length > 0) {
+        continue; // Already populated
+      }
+
+      const resolved = await resolveItemIdsForUser(row.user_id, titles, userItemsCache);
+      if (!resolved || resolved.ids.length === 0) {
+        continue;
+      }
+
+      try {
+        await query(
+          `UPDATE ${tableName} SET item_ids = $1, item_titles = $2 WHERE id = $3`,
+          [JSON.stringify(resolved.ids), JSON.stringify(resolved.titles), row.id]
+        );
+        console.log(
+          `[Migration] Backfilled ${tableName} ${row.id} for user ${row.user_id} with ${resolved.ids.length} item IDs`
+        );
+      } catch (error) {
+        console.error(
+          `[Migration] Failed to backfill ${tableName} ${row.id} for user ${row.user_id}:`,
+          error
+        );
+      }
+    }
+  };
+
+  try {
+    const savedOutfits = await query(
+      'SELECT id, user_id, item_titles, item_ids FROM saved_outfits'
+    );
+    await processRows(savedOutfits.rows, 'saved_outfits');
+
+    const feedback = await query(
+      'SELECT id, user_id, item_titles, item_ids FROM outfit_feedback'
+    );
+    await processRows(feedback.rows, 'outfit_feedback');
+  } catch (error) {
+    console.error('[Migration] Error during outfit item ID backfill:', error);
+  }
+}
+
 // Initialize database schema
 export async function initializeSchema(): Promise<void> {
   const createTablesQuery = `
@@ -151,8 +302,21 @@ export async function initializeSchema(): Promise<void> {
       user_id TEXT NOT NULL,
       title TEXT NOT NULL,
       category TEXT NOT NULL,
+      sub_category TEXT,
+      brand TEXT,
       description TEXT,
       image_url TEXT,
+      color_palette TEXT,
+      fabric TEXT,
+      pattern TEXT,
+      silhouettes TEXT,
+      silhouette TEXT,
+      fit TEXT,
+      formalities TEXT,
+      style_tags TEXT,
+      seasons TEXT,
+      occasion_tags TEXT,
+      care_notes TEXT,
       measurements TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -181,6 +345,7 @@ export async function initializeSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS saved_outfits (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
+      item_ids TEXT,
       item_titles TEXT NOT NULL,
       prompt TEXT,
       notes TEXT,
@@ -191,6 +356,7 @@ export async function initializeSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS outfit_feedback (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
+      item_ids TEXT,
       item_titles TEXT NOT NULL,
       type TEXT NOT NULL,
       feedback TEXT,
@@ -244,12 +410,62 @@ export async function initializeSchema(): Promise<void> {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_profiles' AND column_name = 'inseam') THEN
           ALTER TABLE user_profiles ADD COLUMN inseam NUMERIC;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'color_palette') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN color_palette TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'fabric') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN fabric TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'pattern') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN pattern TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'silhouettes') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN silhouettes TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'silhouette') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN silhouette TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'fit') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN fit TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'formalities') THEN
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'formality') THEN
+            ALTER TABLE wardrobe_items RENAME COLUMN formality TO formalities;
+          ELSE
+            ALTER TABLE wardrobe_items ADD COLUMN formalities TEXT;
+          END IF;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'style_tags') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN style_tags TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'seasons') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN seasons TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'occasion_tags') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN occasion_tags TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'care_notes') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN care_notes TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'sub_category') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN sub_category TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'wardrobe_items' AND column_name = 'brand') THEN
+          ALTER TABLE wardrobe_items ADD COLUMN brand TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'saved_outfits' AND column_name = 'item_ids') THEN
+          ALTER TABLE saved_outfits ADD COLUMN item_ids TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'outfit_feedback' AND column_name = 'item_ids') THEN
+          ALTER TABLE outfit_feedback ADD COLUMN item_ids TEXT;
+        END IF;
       END $$;
     `);
   } catch (error) {
     // Ignore errors if columns already exist
     console.log('Migration check for measurement columns:', error instanceof Error ? error.message : String(error));
   }
+
 }
 
 // Helper functions
@@ -304,14 +520,31 @@ export async function updateUserData(userId: string, clicks: number, resetDate: 
     [clicks, resetDate, userId]);
 }
 
+export async function resetAllUserClicks(resetDate: string) {
+  await query('UPDATE user_data SET outfit_generation_clicks = 0, last_click_reset_date = $1', [resetDate]);
+}
+
 export async function getItemsByUser(userId: string): Promise<WardrobeItem[]> {
   const result = await query('SELECT * FROM wardrobe_items WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
   return result.rows.map(row => ({
     id: row.id,
     title: row.title,
     category: row.category,
+    subCategory: row.sub_category || undefined,
     description: row.description || undefined,
     imageUrl: row.image_url || undefined,
+    colors: row.color_palette ? JSON.parse(row.color_palette) : undefined,
+    fabrics: row.fabric ? JSON.parse(row.fabric) : undefined,
+    pattern: row.pattern || undefined,
+    silhouettes: row.silhouettes ? JSON.parse(row.silhouettes) : undefined,
+    silhouette: row.silhouette || undefined,
+    fit: row.fit || undefined,
+    formalities: row.formalities ? JSON.parse(row.formalities) : undefined,
+    styleTags: row.style_tags ? JSON.parse(row.style_tags) : undefined,
+    seasons: row.seasons ? JSON.parse(row.seasons) : undefined,
+    occasions: row.occasion_tags ? JSON.parse(row.occasion_tags) : undefined,
+    careNotes: row.care_notes || undefined,
+    brand: row.brand || undefined,
     measurements: row.measurements ? JSON.parse(row.measurements) : undefined,
     createdAt: row.created_at
   }));
@@ -323,8 +556,21 @@ export async function getAllItems(): Promise<WardrobeItem[]> {
     id: row.id,
     title: row.title,
     category: row.category,
+    subCategory: row.sub_category || undefined,
     description: row.description || undefined,
     imageUrl: row.image_url || undefined,
+    colors: row.color_palette ? JSON.parse(row.color_palette) : undefined,
+    fabrics: row.fabric ? JSON.parse(row.fabric) : undefined,
+    pattern: row.pattern || undefined,
+    silhouettes: row.silhouettes ? JSON.parse(row.silhouettes) : undefined,
+    silhouette: row.silhouette || undefined,
+    fit: row.fit || undefined,
+    formalities: row.formalities ? JSON.parse(row.formalities) : undefined,
+    styleTags: row.style_tags ? JSON.parse(row.style_tags) : undefined,
+    seasons: row.seasons ? JSON.parse(row.seasons) : undefined,
+    occasions: row.occasion_tags ? JSON.parse(row.occasion_tags) : undefined,
+    careNotes: row.care_notes || undefined,
+    brand: row.brand || undefined,
     measurements: row.measurements ? JSON.parse(row.measurements) : undefined,
     createdAt: row.created_at
   }));
@@ -339,8 +585,21 @@ export async function getItemById(itemId: string) {
     userId: row.user_id,
     title: row.title,
     category: row.category,
+    subCategory: row.sub_category || undefined,
     description: row.description || undefined,
     imageUrl: row.image_url || undefined,
+    colors: row.color_palette ? JSON.parse(row.color_palette) : undefined,
+    fabrics: row.fabric ? JSON.parse(row.fabric) : undefined,
+    pattern: row.pattern || undefined,
+    silhouettes: row.silhouettes ? JSON.parse(row.silhouettes) : undefined,
+    silhouette: row.silhouette || undefined,
+    fit: row.fit || undefined,
+    formalities: row.formalities ? JSON.parse(row.formalities) : undefined,
+    styleTags: row.style_tags ? JSON.parse(row.style_tags) : undefined,
+    seasons: row.seasons ? JSON.parse(row.seasons) : undefined,
+    occasions: row.occasion_tags ? JSON.parse(row.occasion_tags) : undefined,
+    careNotes: row.care_notes || undefined,
+    brand: row.brand || undefined,
     measurements: row.measurements ? JSON.parse(row.measurements) : undefined,
     createdAt: row.created_at
   };
@@ -348,14 +607,27 @@ export async function getItemById(itemId: string) {
 
 export async function insertItem(item: WardrobeItem, userId: string) {
   await query(
-    'INSERT INTO wardrobe_items (id, user_id, title, category, description, image_url, measurements, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+    'INSERT INTO wardrobe_items (id, user_id, title, category, sub_category, brand, description, image_url, color_palette, fabric, pattern, silhouettes, silhouette, fit, formalities, style_tags, seasons, occasion_tags, care_notes, measurements, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)',
     [
       item.id,
       userId,
       item.title,
       item.category,
+      item.subCategory || null,
+      item.brand || null,
       item.description || null,
       item.imageUrl || null,
+      item.colors ? JSON.stringify(item.colors) : null,
+      item.fabrics ? JSON.stringify(item.fabrics) : null,
+      item.pattern || null,
+      item.silhouettes ? JSON.stringify(item.silhouettes) : null,
+      item.silhouette || (item.silhouettes && item.silhouettes.length > 0 ? item.silhouettes[0] : null),
+      item.fit || null,
+      item.formalities ? JSON.stringify(item.formalities) : null,
+      item.styleTags ? JSON.stringify(item.styleTags) : null,
+      item.seasons ? JSON.stringify(item.seasons) : null,
+      item.occasions ? JSON.stringify(item.occasions) : null,
+      item.careNotes || null,
       item.measurements ? JSON.stringify(item.measurements) : null,
       item.createdAt
     ]
@@ -367,13 +639,62 @@ export async function updateItem(itemId: string, updates: Partial<WardrobeItem>)
   if (!item) throw new Error('Item not found');
   
   await query(
-    'UPDATE wardrobe_items SET title = $1, category = $2, description = $3, image_url = $4, measurements = $5 WHERE id = $6',
+    'UPDATE wardrobe_items SET title = $1, category = $2, sub_category = $3, brand = $4, description = $5, image_url = $6, color_palette = $7, fabric = $8, pattern = $9, silhouettes = $10, silhouette = $11, fit = $12, formalities = $13, style_tags = $14, seasons = $15, occasion_tags = $16, care_notes = $17, measurements = $18 WHERE id = $19',
     [
       updates.title ?? item.title,
       updates.category ?? item.category,
+      updates.subCategory ?? item.subCategory ?? null,
+      updates.brand ?? item.brand ?? null,
       updates.description ?? item.description ?? null,
       updates.imageUrl ?? item.imageUrl ?? null,
-      updates.measurements ? JSON.stringify(updates.measurements) : (item.measurements ? JSON.stringify(item.measurements) : null),
+      updates.colors
+        ? JSON.stringify(updates.colors)
+        : item.colors
+        ? JSON.stringify(item.colors)
+        : null,
+      updates.fabrics
+        ? JSON.stringify(updates.fabrics)
+        : item.fabrics
+        ? JSON.stringify(item.fabrics)
+        : null,
+      updates.pattern ?? item.pattern ?? null,
+      updates.silhouettes
+        ? JSON.stringify(updates.silhouettes)
+        : item.silhouettes
+        ? JSON.stringify(item.silhouettes)
+        : null,
+      updates.silhouette ??
+        (updates.silhouettes && updates.silhouettes.length > 0
+          ? updates.silhouettes[0]
+          : item.silhouette ??
+            (item.silhouettes && item.silhouettes.length > 0 ? item.silhouettes[0] : null)),
+      updates.fit ?? item.fit ?? null,
+      updates.formalities
+        ? JSON.stringify(updates.formalities)
+        : item.formalities
+        ? JSON.stringify(item.formalities)
+        : null,
+      updates.styleTags
+        ? JSON.stringify(updates.styleTags)
+        : item.styleTags
+        ? JSON.stringify(item.styleTags)
+        : null,
+      updates.seasons
+        ? JSON.stringify(updates.seasons)
+        : item.seasons
+        ? JSON.stringify(item.seasons)
+        : null,
+      updates.occasions
+        ? JSON.stringify(updates.occasions)
+        : item.occasions
+        ? JSON.stringify(item.occasions)
+        : null,
+      updates.careNotes ?? item.careNotes ?? null,
+      updates.measurements
+        ? JSON.stringify(updates.measurements)
+        : item.measurements
+        ? JSON.stringify(item.measurements)
+        : null,
       itemId
     ]
   );
@@ -452,20 +773,22 @@ export async function getSavedOutfits(userId: string) {
   const result = await query('SELECT * FROM saved_outfits WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
   return result.rows.map(row => ({
     id: row.id,
-    itemTitles: JSON.parse(row.item_titles),
+    itemIds: safeParseStringArray(row.item_ids),
+    itemTitles: safeParseStringArray(row.item_titles),
     prompt: row.prompt || undefined,
     notes: row.notes || undefined,
     createdAt: row.created_at
   }));
 }
 
-export async function insertSavedOutfit(userId: string, outfit: any) {
+export async function insertSavedOutfit(userId: string, outfit: SavedOutfit) {
   await query(
-    'INSERT INTO saved_outfits (id, user_id, item_titles, prompt, notes, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
+    'INSERT INTO saved_outfits (id, user_id, item_ids, item_titles, prompt, notes, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
     [
       outfit.id,
       userId,
-      JSON.stringify(outfit.itemTitles),
+      JSON.stringify(outfit.itemIds || []),
+      JSON.stringify(outfit.itemTitles || []),
       outfit.prompt || null,
       outfit.notes || null,
       outfit.createdAt
@@ -481,7 +804,8 @@ export async function getFeedback(userId: string) {
   const result = await query('SELECT * FROM outfit_feedback WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
   return result.rows.map(row => ({
     id: row.id,
-    itemTitles: JSON.parse(row.item_titles),
+    itemIds: safeParseStringArray(row.item_ids),
+    itemTitles: safeParseStringArray(row.item_titles),
     type: row.type,
     feedback: row.feedback || undefined,
     prompt: row.prompt || undefined,
@@ -491,11 +815,12 @@ export async function getFeedback(userId: string) {
 
 export async function insertFeedback(userId: string, feedback: OutfitFeedback) {
   await query(
-    'INSERT INTO outfit_feedback (id, user_id, item_titles, type, feedback, prompt, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+    'INSERT INTO outfit_feedback (id, user_id, item_ids, item_titles, type, feedback, prompt, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
     [
       feedback.id,
       userId,
-      JSON.stringify(feedback.itemTitles),
+      JSON.stringify(feedback.itemIds || []),
+      JSON.stringify(feedback.itemTitles || []),
       feedback.type,
       feedback.feedback || null,
       feedback.prompt || null,

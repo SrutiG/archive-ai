@@ -18,6 +18,13 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  const getDisplayCategory = (item: WardrobeItem) => {
+    if (item.subCategory && item.subCategory.toLowerCase() !== 'other') {
+      return item.subCategory;
+    }
+    return item.category;
+  };
+
   const handleDelete = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this item?')) {
       return;
@@ -110,7 +117,7 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
                     (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
                   }}
                 />
-                <span className="item-category">{item.category}</span>
+                <span className="item-category">{getDisplayCategory(item)}</span>
               </div>
               <div className="item-info">
                 <h3>{item.title}</h3>
@@ -154,6 +161,7 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
                           (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
                         }}
                       />
+                      <span className="item-category">{getDisplayCategory(item)}</span>
                     </div>
                     <div className="item-info">
                       <h3>{item.title}</h3>

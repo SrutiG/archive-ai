@@ -4,6 +4,7 @@ import { SectionHeader, Button } from '../design-system';
 import { getMeasurementFields, Measurements as MeasurementsType } from '../utils/measurementFields';
 import { useCamera } from '../hooks/useCamera';
 import { apiGet, apiUpload } from '../utils/api';
+import WardrobeAttributeFields from './WardrobeAttributeFields';
 
 interface ItemInputProps {
   onItemAdded: () => void;
@@ -17,12 +18,26 @@ type Measurements = MeasurementsType;
 const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading, apiUrl: _apiUrl }) => {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
+  const [subCategory, setSubCategory] = useState('');
   const [description, setDescription] = useState('');
   const [categories, setCategories] = useState<string[]>([]);
+  const [subcategories, setSubcategories] = useState<Record<string, string[]>>({});
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [measurements, setMeasurements] = useState<Measurements>({});
+  const [showDetails, setShowDetails] = useState(false);
+  const [selectedColors, setSelectedColors] = useState<string[]>([]);
+  const [selectedFabrics, setSelectedFabrics] = useState<string[]>([]);
+  const [selectedSilhouettes, setSelectedSilhouettes] = useState<string[]>([]);
+  const [selectedFormalities, setSelectedFormalities] = useState<string[]>([]);
+  const [selectedStyleTags, setSelectedStyleTags] = useState<string[]>([]);
+  const [selectedSeasons, setSelectedSeasons] = useState<string[]>([]);
+  const [selectedOccasions, setSelectedOccasions] = useState<string[]>([]);
+  const [pattern, setPattern] = useState('');
+  const [fit, setFit] = useState('');
+  const [brand, setBrand] = useState('');
+  const [careNotes, setCareNotes] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const {
@@ -51,6 +66,10 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
       .then(res => res.json())
       .then(data => setCategories(data))
       .catch(err => console.error('Error fetching categories:', err));
+    apiGet('/api/subcategories')
+      .then(res => res.json())
+      .then(data => setSubcategories(data))
+      .catch(err => console.error('Error fetching subcategories:', err));
   }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -113,8 +132,44 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
       }
       formData.append('title', title);
       formData.append('category', category);
+      if (subCategory) {
+        formData.append('subCategory', subCategory);
+      }
       if (description.trim()) {
         formData.append('description', description);
+      }
+      if (selectedColors.length > 0) {
+        formData.append('colors', JSON.stringify(selectedColors));
+      }
+      if (selectedFabrics.length > 0) {
+        formData.append('fabrics', JSON.stringify(selectedFabrics));
+      }
+      if (selectedSilhouettes.length > 0) {
+        formData.append('silhouettes', JSON.stringify(selectedSilhouettes));
+      }
+      if (selectedFormalities.length > 0) {
+        formData.append('formalities', JSON.stringify(selectedFormalities));
+      }
+      if (selectedStyleTags.length > 0) {
+        formData.append('styleTags', JSON.stringify(selectedStyleTags));
+      }
+      if (selectedSeasons.length > 0) {
+        formData.append('seasons', JSON.stringify(selectedSeasons));
+      }
+      if (selectedOccasions.length > 0) {
+        formData.append('occasions', JSON.stringify(selectedOccasions));
+      }
+      if (pattern) {
+        formData.append('pattern', pattern);
+      }
+      if (fit) {
+        formData.append('fit', fit);
+      }
+      if (brand) {
+        formData.append('brand', brand);
+      }
+      if (careNotes.trim()) {
+        formData.append('careNotes', careNotes.trim());
       }
       if (Object.keys(measurements).length > 0) {
         formData.append('measurements', JSON.stringify(measurements));
@@ -133,10 +188,23 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
       // Reset form
       setTitle('');
       setCategory('');
+      setSubCategory('');
       setDescription('');
       setMeasurements({});
       setPhoto(null);
       setPreview(null);
+      setSelectedColors([]);
+      setSelectedFabrics([]);
+      setSelectedSilhouettes([]);
+      setSelectedFormalities([]);
+      setSelectedStyleTags([]);
+      setSelectedSeasons([]);
+      setSelectedOccasions([]);
+      setPattern('');
+      setFit('');
+      setBrand('');
+      setCareNotes('');
+      setShowDetails(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -174,8 +242,15 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
             id="category"
             value={category}
             onChange={(e) => {
-              setCategory(e.target.value);
+              const nextCategory = e.target.value;
+              if (nextCategory === category) {
+                return;
+              }
+              setCategory(nextCategory);
               setMeasurements({}); // Reset measurements when category changes
+              const options = subcategories[nextCategory] || [];
+              const defaultOption = options.find(option => option.toLowerCase() !== 'other');
+              setSubCategory(defaultOption || '');
             }}
             disabled={loading}
             required
@@ -186,6 +261,25 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
             ))}
           </select>
         </div>
+
+        {category && (
+          <div className="form-group">
+            <label htmlFor="subCategory">Sub-category</label>
+            <select
+              id="subCategory"
+              value={subCategory}
+              onChange={(e) => setSubCategory(e.target.value)}
+              disabled={loading}
+            >
+              <option value="">Select a sub-category</option>
+              {(subcategories[category] || ['Other']).map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="form-group">
           <label htmlFor="description">Description</label>
@@ -307,6 +401,35 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
             </div>
           )}
         </div>
+
+        <WardrobeAttributeFields
+          category={category}
+          subCategory={subCategory}
+          showDetails={showDetails}
+          onToggleDetails={() => setShowDetails(prev => !prev)}
+          selectedColors={selectedColors}
+          onColorsChange={setSelectedColors}
+          selectedFabrics={selectedFabrics}
+          onFabricsChange={setSelectedFabrics}
+          selectedSilhouettes={selectedSilhouettes}
+          onSilhouettesChange={setSelectedSilhouettes}
+          pattern={pattern}
+          onPatternChange={setPattern}
+          selectedFormalities={selectedFormalities}
+          onFormalitiesChange={setSelectedFormalities}
+          selectedStyleTags={selectedStyleTags}
+          onStyleTagsChange={setSelectedStyleTags}
+          selectedSeasons={selectedSeasons}
+          onSeasonsChange={setSelectedSeasons}
+          selectedOccasions={selectedOccasions}
+          onOccasionsChange={setSelectedOccasions}
+          fit={fit}
+          onFitChange={setFit}
+          brand={brand}
+          onBrandChange={setBrand}
+          careNotes={careNotes}
+          onCareNotesChange={setCareNotes}
+        />
 
         {error && <div className="error-message">{error}</div>}
 

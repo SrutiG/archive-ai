@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import './OutfitsPage.css';
 import { WardrobeItem } from '../App';
 import FeedbackModal from '../components/FeedbackModal';
@@ -20,6 +20,7 @@ interface GeneratedOutfit {
 
 interface SavedOutfit {
   id: string;
+  itemIds: string[];
   itemTitles: string[];
   createdAt: string;
   prompt?: string;
@@ -34,6 +35,7 @@ interface OutfitStatus {
 
 interface OutfitFeedback {
   id: string;
+  itemIds: string[];
   itemTitles: string[];
   type: 'like' | 'dislike';
   feedback?: string;
@@ -45,7 +47,12 @@ const CATEGORY_ORDER = [
   {
     key: 'tops',
     label: 'Top',
-    keywords: ['top', 'tops', 'shirt', 'blouse', 'sweater', 'hoodie', 'coat', 'jacket', 'outerwear', 'blazer', 'cardigan', 'dress', 'sweatshirt', 'pullover', 'tee', 't-shirt'],
+    keywords: ['top', 'tops', 'shirt', 'blouse', 'sweater', 'hoodie', 'coat', 'jacket', 'outerwear', 'blazer', 'cardigan', 'sweatshirt', 'pullover', 'tee', 't-shirt'],
+  },
+  {
+    key: 'dresses',
+    label: 'Dress',
+    keywords: ['dress', 'dresses', 'gown', 'gowns', 'jumpsuit', 'jumpsuits', 'romper', 'rompers', 'overall', 'overalls'],
   },
   {
     key: 'bottoms',
@@ -67,7 +74,7 @@ const CATEGORY_ORDER = [
 const CATEGORY_DIRECT_MAP: Record<string, typeof CATEGORY_ORDER[number]['key']> = {
   Tops: 'tops',
   Bottoms: 'bottoms',
-  Dresses: 'bottoms',
+  Dresses: 'dresses',
   Outerwear: 'tops',
   Shoes: 'shoes',
   Accessories: 'accessories',
@@ -75,6 +82,7 @@ const CATEGORY_DIRECT_MAP: Record<string, typeof CATEGORY_ORDER[number]['key']> 
   Jewelry: 'accessories',
   Activewear: 'tops',
   Underwear: 'bottoms',
+  'Underwear & Sleepwear': 'accessories',
 };
 
 const CATEGORY_BUCKET_MAP: Record<string, typeof CATEGORY_ORDER[number]['key']> = {
@@ -105,8 +113,16 @@ const CATEGORY_BUCKET_MAP: Record<string, typeof CATEGORY_ORDER[number]['key']> 
   tshirts: 'tops',
   't-shirt': 'tops',
   't-shirts': 'tops',
-  dress: 'tops',
-  dresses: 'tops',
+  dress: 'dresses',
+  dresses: 'dresses',
+  gown: 'dresses',
+  gowns: 'dresses',
+  jumpsuit: 'dresses',
+  jumpsuits: 'dresses',
+  romper: 'dresses',
+  rompers: 'dresses',
+  overall: 'dresses',
+  overalls: 'dresses',
   activewear: 'tops',
 
   bottom: 'bottoms',
@@ -241,6 +257,14 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   const [feedback, setFeedback] = useState<OutfitFeedback[]>([]);
   const [expandedContexts, setExpandedContexts] = useState<Record<string, boolean>>({});
   const [contextOverflow, setContextOverflow] = useState<Record<string, boolean>>({});
+
+  const itemsById = useMemo(() => {
+    const map = new Map<string, WardrobeItem>();
+    items.forEach(item => {
+      map.set(item.id, item);
+    });
+    return map;
+  }, [items]);
   const contextRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackModalType, setFeedbackModalType] = useState<'like' | 'dislike'>('like');
@@ -282,10 +306,11 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
     try {
       const response = await apiGet('/api/outfits/saved');
       const data = await response.json();
-      // Ensure data is an array and each outfit has itemTitles
-      const outfits = (Array.isArray(data) ? data : []).filter((outfit: any) => 
-        outfit && Array.isArray(outfit.itemTitles)
-      );
+      const outfits = (Array.isArray(data) ? data : []).map((outfit: any) => ({
+        ...outfit,
+        itemIds: Array.isArray(outfit.itemIds) ? outfit.itemIds : [],
+        itemTitles: Array.isArray(outfit.itemTitles) ? outfit.itemTitles : [],
+      }));
       setSavedOutfits(outfits);
     } catch (error) {
       console.error('Error fetching saved outfits:', error);
@@ -381,8 +406,26 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
   const handleSaveOutfit = async (outfit: GeneratedOutfit, index: number) => {
     setSavingOutfitId(index);
     try {
+      const matchedItems = (outfit.items || []).map((title) => {
+        const normalized = normalizeTitleForMatch(title);
+        return items.find((item) => normalizeTitleForMatch(item.title) === normalized);
+      });
+
+      if (matchedItems.some((item) => !item)) {
+        const missing = matchedItems
+          .map((item, idx) => (!item ? outfit.items[idx] : null))
+          .filter(Boolean);
+        alert(
+          `Could not find the following items in your wardrobe: ${missing?.join(', ') || 'Unknown items'}`
+        );
+        return;
+      }
+
+      const resolvedItems = matchedItems.filter((item): item is WardrobeItem => Boolean(item));
+
       const response = await apiPost('/api/outfits/save', {
-        itemTitles: outfit.items || [],
+        itemIds: resolvedItems.map((item) => item.id),
+        itemTitles: resolvedItems.map((item) => item.title),
         prompt: prompt || undefined,
       });
 
@@ -418,7 +461,12 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
     try {
       const response = await apiGet('/api/outfits/feedback');
       const data = await response.json();
-      setFeedback(data);
+      const entries = (Array.isArray(data) ? data : []).map((item: any) => ({
+        ...item,
+        itemIds: Array.isArray(item.itemIds) ? item.itemIds : [],
+        itemTitles: Array.isArray(item.itemTitles) ? item.itemTitles : [],
+      }));
+      setFeedback(entries);
     } catch (error) {
       console.error('Error fetching feedback:', error);
     }
@@ -435,8 +483,27 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
     if (feedbackModalIndex === null) return;
 
     try {
+      const matchedItems = feedbackModalOutfit.map((title) => {
+        const normalized = normalizeTitleForMatch(title);
+        return items.find((item) => normalizeTitleForMatch(item.title) === normalized);
+      });
+
+      if (matchedItems.some((item) => !item)) {
+        const missing = matchedItems
+          .map((item, idx) => (!item ? feedbackModalOutfit[idx] : null))
+          .filter(Boolean);
+        alert(
+          `Could not find the following items in your wardrobe for feedback: ${missing?.join(', ') ||
+            'Unknown items'}`
+        );
+        return;
+      }
+
+      const resolvedItems = matchedItems.filter((item): item is WardrobeItem => Boolean(item));
+
       const response = await apiPost('/api/outfits/feedback', {
-        itemTitles: feedbackModalOutfit,
+        itemIds: resolvedItems.map((item) => item.id),
+        itemTitles: resolvedItems.map((item) => item.title),
         type: feedbackModalType,
         feedback: feedbackText.trim() || undefined,
         prompt: prompt || undefined,
@@ -541,74 +608,74 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
           </div>
         </div>
       ) : (
-        <div className="generate-section">
-          <SectionHeader title="Outfit Generator" />
-          <div className="generate-form">
-            <div className="form-group">
-              <label htmlFor="selectedItems">Build Outfit Around Specific Items (Optional, max 3)</label>
-              <ItemAutocomplete
-                items={items}
-                selectedItems={selectedItems}
-                onItemsChange={setSelectedItems}
-                maxItems={3}
-                disabled={loading}
-                apiUrl={apiUrl}
-              />
-              <small>Select up to 3 items to build outfits around. All item details (description, measurements) will be included in the generation context.</small>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="prompt">Additional Context (Optional)</label>
-              <textarea
-                id="prompt"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="e.g., 'Temperature: 65°F, Occasion: casual dinner, Mood: relaxed and comfortable'"
-                rows={3}
-                disabled={loading}
-                className="prompt-textarea"
-              />
-              <small>Add details about weather, occasion, mood, or any specific requirements</small>
-            </div>
-
-            {status && (
-              <div className="status-badge">
-                <span>
-                  {status.remaining} / {status.maxClicks} clicks remaining today
-                </span>
-              </div>
-            )}
-
-            {!canGenerate ? (
-              <div className="info-message">
-                <p>
-                  {categoryCount < 2
-                    ? 'Need at least 2 different categories to generate outfits.'
-                    : 'Add at least 2 items to generate outfits.'}
-                </p>
-                <p className="current-stats">
-                  Current: {items.length} items in {categoryCount} categories
-                </p>
-              </div>
-            ) : (
-              <Button
-                variant="primary"
-                size="medium"
-                onClick={handleGenerate}
-                disabled={loading || (status?.remaining ?? 0) <= 0}
-                className="generate-btn"
-              >
-                {loading
-                  ? 'Generating Outfits...'
-                  : status?.remaining === 0
-                  ? 'Daily Limit Reached'
-                  : 'Generate 5 Outfits'}
-              </Button>
-            )}
-
-            {error && <div className="error-message">{error}</div>}
+      <div className="generate-section">
+        <SectionHeader title="Outfit Generator" />
+        <div className="generate-form">
+          <div className="form-group">
+            <label htmlFor="selectedItems">Build Outfit Around Specific Items (Optional, max 3)</label>
+            <ItemAutocomplete
+              items={items}
+              selectedItems={selectedItems}
+              onItemsChange={setSelectedItems}
+              maxItems={3}
+              disabled={loading}
+              apiUrl={apiUrl}
+            />
+            <small>Select up to 3 items to build outfits around. All item details (description, measurements) will be included in the generation context.</small>
           </div>
+
+          <div className="form-group">
+            <label htmlFor="prompt">Additional Context (Optional)</label>
+            <textarea
+              id="prompt"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="e.g., 'Temperature: 65°F, Occasion: casual dinner, Mood: relaxed and comfortable'"
+              rows={3}
+              disabled={loading}
+              className="prompt-textarea"
+            />
+            <small>Add details about weather, occasion, mood, or any specific requirements</small>
+          </div>
+
+          {status && (
+            <div className="status-badge">
+              <span>
+                {status.remaining} / {status.maxClicks} clicks remaining today
+              </span>
+            </div>
+          )}
+
+          {!canGenerate ? (
+            <div className="info-message">
+              <p>
+                {categoryCount < 2
+                  ? 'Need at least 2 different categories to generate outfits.'
+                  : 'Add at least 2 items to generate outfits.'}
+              </p>
+              <p className="current-stats">
+                Current: {items.length} items in {categoryCount} categories
+              </p>
+            </div>
+          ) : (
+            <Button
+              variant="primary"
+              size="medium"
+              onClick={handleGenerate}
+              disabled={loading || (status?.remaining ?? 0) <= 0}
+              className="generate-btn"
+            >
+              {loading
+                ? 'Generating Outfits...'
+                : status?.remaining === 0
+                ? 'Daily Limit Reached'
+                : 'Generate 5 Outfits'}
+            </Button>
+          )}
+
+          {error && <div className="error-message">{error}</div>}
         </div>
+      </div>
       )}
 
       {generatedOutfits.length > 0 && (
@@ -726,78 +793,94 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
           <SectionHeader title={`Saved Outfits (${savedOutfits.length})`} />
           <div className="outfits-grid">
             {savedOutfits.map((outfit) => {
-              const outfitItemData = (outfit.itemTitles || []).map((itemTitle: string) => {
-                const normalizedKey = normalizeTitleForMatch(itemTitle);
-                const matchedItem = items.find(
-                  (i) => normalizeTitleForMatch(i.title) === normalizedKey
-                );
+              const normalizedFallbackTitles = (outfit.itemTitles || []).map((itemTitle: string) =>
+                formatTitleForDisplay(itemTitle)
+              );
+              const outfitItemData =
+                outfit.itemIds && outfit.itemIds.length > 0
+                  ? outfit.itemIds.map((itemId: string, index: number) => {
+                      const matchedItem = itemsById.get(itemId);
+                      const fallbackTitle =
+                        outfit.itemTitles?.[index] ||
+                        normalizedFallbackTitles[index] ||
+                        matchedItem?.title ||
+                        `Item ${index + 1}`;
 
-                const displayTitle = matchedItem
-                  ? matchedItem.title
-                  : formatTitleForDisplay(itemTitle);
+                      return {
+                        id: itemId,
+                        title: matchedItem?.title || fallbackTitle,
+                        item: matchedItem,
+                      };
+                    })
+                  : (outfit.itemTitles || []).map((itemTitle: string, index: number) => {
+                      const normalizedKey = normalizeTitleForMatch(itemTitle);
+                      const matchedItem = items.find(
+                        (i) => normalizeTitleForMatch(i.title) === normalizedKey
+                      );
 
-                return {
-                  title: displayTitle,
-                  item: matchedItem,
-                  originalTitle: itemTitle,
-                };
-              });
+                      const displayTitle = matchedItem
+                        ? matchedItem.title
+                        : formatTitleForDisplay(itemTitle);
+
+                      return {
+                        id: matchedItem?.id || `${itemTitle}-${index}`,
+                        title: displayTitle,
+                        item: matchedItem,
+                      };
+                    });
               const isContextExpanded = expandedContexts[outfit.id] ?? false;
               const hasContextOverflow = contextOverflow[outfit.id] ?? false;
 
               const categoryBuckets = CATEGORY_ORDER.map((category) => ({
                 ...category,
-                items: [] as { title: string; item?: WardrobeItem }[],
+                items: [] as { id: string; title: string; item?: WardrobeItem }[],
               }));
 
-              outfitItemData.forEach(({ title, item }) => {
+              outfitItemData.forEach(({ id, title, item }) => {
                 const bucketKey = resolveCategoryBucket(item, title);
                 const targetBucket = categoryBuckets.find((bucket) => bucket.key === bucketKey);
 
                 if (targetBucket) {
-                  targetBucket.items.push({ title, item });
+                  targetBucket.items.push({ id, title, item });
                 }
               });
 
-              return (
+              const visibleBuckets = categoryBuckets.filter((bucket) => bucket.items.length > 0);
+
+                    return (
                 <div
                   key={outfit.id}
                   className="outfit-card saved"
                 >
                   <div className="outfit-card-content">
                     <div className="outfit-category-layout">
-                      {categoryBuckets.map((bucket) => (
+                      {visibleBuckets.map((bucket) => (
                         <div key={bucket.key} className="outfit-category-row">
                           <span className="outfit-category-row-label">{bucket.label}</span>
                           <div className="outfit-category-row-items">
-                            {bucket.items.length > 0 ? (
-                              bucket.items.map(({ title, item }) => (
-                                <div key={title} className="outfit-category-row-item" data-tooltip={title}>
-                                  <div className="outfit-category-row-thumb">
-                                    {item ? (
-                                      <img
-                                        src={getItemImageUrl(item, apiUrl)}
-                                        alt={title}
-                                        className="outfit-category-row-image"
-                                        onError={(e) => {
-                                          (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
-                                        }}
-                                      />
-                                    ) : (
-                                      <div className="outfit-category-row-placeholder">{title}</div>
-                                    )}
-                                  </div>
-                                  <span className="outfit-category-row-title">{title}</span>
+                            {bucket.items.map(({ id, title, item }, itemIndex) => (
+                              <div
+                                key={`${id}-${itemIndex}`}
+                                className="outfit-category-row-item"
+                                data-tooltip={title}
+                              >
+                                <div className="outfit-category-row-thumb">
+                        {item ? (
+                            <img
+                              src={getItemImageUrl(item, apiUrl)}
+                                      alt={title}
+                                      className="outfit-category-row-image"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
+                              }}
+                            />
+                                  ) : (
+                                    <div className="outfit-category-row-placeholder">{title}</div>
+                                  )}
                                 </div>
-                              ))
-                            ) : (
-                              <div className="outfit-category-row-item placeholder" data-tooltip="None">
-                                <div className="outfit-category-row-thumb placeholder">
-                                  <div className="outfit-category-row-placeholder-text">—</div>
-                                </div>
-                                <span className="outfit-category-row-title">None</span>
+                                <span className="outfit-category-row-title">{title}</span>
                               </div>
-                            )}
+                            ))}
                           </div>
                         </div>
                       ))}
@@ -833,19 +916,19 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                         )}
                       </div>
                     )}
-                  </div>
-                  <div className="outfit-footer">
-                    <small>{new Date(outfit.createdAt).toLocaleDateString()}</small>
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      onClick={() => handleDeleteSavedOutfit(outfit.id)}
-                      className="delete-outfit-btn"
-                    >
-                      🗑️ Delete
-                    </Button>
-                  </div>
                 </div>
+                <div className="outfit-footer">
+                    <small>{new Date(outfit.createdAt).toLocaleDateString()}</small>
+                  <Button
+                    variant="secondary"
+                    size="small"
+                    onClick={() => handleDeleteSavedOutfit(outfit.id)}
+                    className="delete-outfit-btn"
+                  >
+                    🗑️ Delete
+                  </Button>
+                </div>
+              </div>
               );
             })}
           </div>
@@ -865,39 +948,52 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
             <div className="feedback-list">
               <SectionHeader title="Your Feedback" />
               <div className="feedback-items">
-                {feedback.map((fb) => (
-                  <div key={fb.id} className={`feedback-item ${fb.type}`}>
-                    <div className="feedback-header">
-                      <span className={`feedback-type ${fb.type}`}>
-                        {fb.type === 'like' ? '✓' : '✗'} {fb.type === 'like' ? 'Liked' : 'Disliked'}
-                      </span>
-                      <span className="feedback-date">
-                        {new Date(fb.createdAt).toLocaleDateString()}
-                      </span>
-                      <Button
-                        variant="secondary"
-                        size="small"
-                        onClick={() => handleDeleteFeedback(fb.id)}
-                        className="delete-feedback-btn"
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                    <div className="feedback-outfit">
-                      {fb.itemTitles.join(' + ')}
-                    </div>
-                    {fb.feedback && (
-                      <div className="feedback-text">
-                        "{fb.feedback}"
+                {feedback.map((fb) => {
+                  const feedbackDisplayTitles = fb.itemIds && fb.itemIds.length > 0
+                    ? fb.itemIds.map((itemId: string, index: number) => {
+                        const matchedItem = itemsById.get(itemId);
+                        if (matchedItem) {
+                          return matchedItem.title;
+                        }
+                        const fallbackTitle = fb.itemTitles?.[index];
+                        return fallbackTitle ? formatTitleForDisplay(fallbackTitle) : `Item ${index + 1}`;
+                      })
+                    : (fb.itemTitles || []).map((title: string) => formatTitleForDisplay(title));
+
+                  return (
+                    <div key={fb.id} className={`feedback-item ${fb.type}`}>
+                      <div className="feedback-header">
+                        <span className={`feedback-type ${fb.type}`}>
+                          {fb.type === 'like' ? '✓' : '✗'} {fb.type === 'like' ? 'Liked' : 'Disliked'}
+                        </span>
+                        <span className="feedback-date">
+                          {new Date(fb.createdAt).toLocaleDateString()}
+                        </span>
+                        <Button
+                          variant="secondary"
+                          size="small"
+                          onClick={() => handleDeleteFeedback(fb.id)}
+                          className="delete-feedback-btn"
+                        >
+                          Delete
+                        </Button>
                       </div>
-                    )}
-                    {fb.prompt && (
-                      <div className="feedback-prompt">
-                        <small>Context: {fb.prompt}</small>
+                      <div className="feedback-outfit">
+                        {feedbackDisplayTitles.join(' + ')}
                       </div>
-                    )}
-                  </div>
-                ))}
+                      {fb.feedback && (
+                        <div className="feedback-text">
+                          "{fb.feedback}"
+                        </div>
+                      )}
+                      {fb.prompt && (
+                        <div className="feedback-prompt">
+                          <small>Context: {fb.prompt}</small>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

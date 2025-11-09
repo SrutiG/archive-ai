@@ -3,6 +3,7 @@
 // Provides a unified async interface for both
 
 import dotenv from 'dotenv';
+import type { SavedOutfit, OutfitFeedback } from './index';
 dotenv.config();
 
 // Check if PostgreSQL is configured
@@ -73,6 +74,13 @@ export async function updateUserData(userId: string, clicks: number, resetDate: 
   return Promise.resolve(sqliteDb.updateUserData(userId, clicks, resetDate));
 }
 
+export async function resetAllUserClicks(resetDate: string) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.resetAllUserClicks(resetDate);
+  }
+  return Promise.resolve(sqliteDb.resetAllUserClicks(resetDate));
+}
+
 export async function getItemsByUser(userId: string) {
   if (USE_POSTGRES && pgDb) {
     return pgDb.getItemsByUser(userId);
@@ -136,7 +144,7 @@ export async function getSavedOutfits(userId: string) {
   return Promise.resolve(sqliteDb.getSavedOutfits(userId));
 }
 
-export async function insertSavedOutfit(userId: string, outfit: any) {
+export async function insertSavedOutfit(userId: string, outfit: SavedOutfit) {
   if (USE_POSTGRES && pgDb) {
     return pgDb.insertSavedOutfit(userId, outfit);
   }
@@ -157,7 +165,7 @@ export async function getFeedback(userId: string) {
   return Promise.resolve(sqliteDb.getFeedback(userId));
 }
 
-export async function insertFeedback(userId: string, feedback: any) {
+export async function insertFeedback(userId: string, feedback: OutfitFeedback) {
   if (USE_POSTGRES && pgDb) {
     return pgDb.insertFeedback(userId, feedback);
   }
@@ -190,6 +198,16 @@ export async function deleteExploreSuggestions(userId: string) {
     return pgDb.deleteExploreSuggestions(userId);
   }
   return Promise.resolve(sqliteDb.deleteExploreSuggestions(userId));
+}
+
+export async function backfillSavedOutfitItemIds() {
+  if (USE_POSTGRES && pgDb && typeof pgDb.backfillOutfitItemIds === 'function') {
+    return pgDb.backfillOutfitItemIds();
+  }
+  if (!USE_POSTGRES && sqliteDb && typeof sqliteDb.backfillOutfitItemIds === 'function') {
+    return Promise.resolve(sqliteDb.backfillOutfitItemIds());
+  }
+  return Promise.resolve();
 }
 
 export async function getExploreUpdate(userId: string) {

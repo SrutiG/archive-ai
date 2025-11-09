@@ -2,7 +2,14 @@ import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
-import { WardrobeItem } from './index';
+import {
+  WardrobeItem,
+  WardrobeFormalityOption,
+  WardrobeOccasionOption,
+  WardrobeSeasonOption,
+  WardrobeStyleTagOption,
+} from './index';
+import { resolveSubCategory } from './wardrobeSubcategories';
 
 dotenv.config();
 
@@ -10,9 +17,382 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 const CATEGORIES = [
-  'Tops', 'Bottoms', 'Dresses', 'Outerwear', 'Shoes', 
-  'Accessories', 'Bags', 'Jewelry', 'Activewear', 'Underwear'
+  'Tops',
+  'Bottoms',
+  'Dresses',
+  'Outerwear',
+  'Shoes',
+  'Accessories',
+  'Bags',
+  'Jewelry',
+  'Activewear',
+  'Underwear & Sleepwear',
+  'Swimwear',
 ];
+
+export type CoreCategory = 'tops' | 'bottoms' | 'shoes' | 'accessories';
+
+const CORE_CATEGORY_KEYWORDS: Record<CoreCategory, string[]> = {
+  tops: [
+    'top', 'tops', 'shirt', 'shirts', 'blouse', 'blouses', 'tee', 'tees', 't-shirt', 't-shirts',
+    'tank', 'camisole', 'sweater', 'sweaters', 'cardigan', 'cardigans', 'hoodie', 'hoodies',
+    'coat', 'coats', 'jacket', 'jackets', 'outerwear', 'blazer', 'blazers', 'vest', 'vests',
+    'pullover', 'sweatshirt', 'sweatshirts', 'kimono', 'poncho', 'cape', 'bodysuit', 'bodysuits'
+  ],
+  bottoms: [
+    'bottom', 'bottoms', 'pant', 'pants', 'trouser', 'trousers', 'jean', 'jeans', 'short', 'shorts',
+    'skirt', 'skirts', 'culotte', 'culottes', 'legging', 'leggings', 'jogger', 'joggers', 'overall',
+    'overalls', 'jumper', 'jumpsuit', 'romper', 'dress', 'dresses', 'gown', 'gowns'
+  ],
+  shoes: [
+    'shoe', 'shoes', 'boot', 'boots', 'sneaker', 'sneakers', 'heel', 'heels', 'pump', 'pumps',
+    'loafer', 'loafers', 'flat', 'flats', 'sandal', 'sandals', 'mule', 'mules', 'clog', 'clogs',
+    'oxford', 'oxfords', 'trainer', 'trainers', 'wedge', 'wedges'
+  ],
+  accessories: [
+    'accessory', 'accessories', 'belt', 'belts', 'bag', 'bags', 'handbag', 'handbags', 'purse', 'clutch',
+    'backpack', 'scarf', 'scarves', 'hat', 'hats', 'beanie', 'earring', 'earrings', 'ring', 'rings',
+    'bracelet', 'bracelets', 'necklace', 'necklaces', 'cuff', 'cuffs', 'watch', 'watches', 'glove', 'gloves',
+    'sunglasses', 'brooch', 'brooches', 'pin', 'pins', 'hair', 'headband', 'shawl'
+  ],
+};
+
+const MULTI_CATEGORY_KEYWORDS: Array<{ keywords: string[]; categories: CoreCategory[] }> = [
+  { keywords: ['dress', 'dresses', 'gown', 'jumpsuit', 'romper', 'overall', 'overalls'], categories: ['tops', 'bottoms'] },
+];
+
+const FORMALITY_KEYWORDS_MAP: Record<WardrobeFormalityOption, string[]> = {
+  casual: ['casual', 'laid back', 'laid-back', 'relaxed'],
+  'smart-casual': ['smart casual', 'smart-casual'],
+  'business-casual': ['business casual', 'business-casual'],
+  'business-formal': ['business formal', 'boardroom', 'corporate formal'],
+  evening: ['evening', 'cocktail', 'dressy', 'night out'],
+  formal: ['formal', 'black tie', 'black-tie', 'gala'],
+  athleisure: ['athletic', 'athleisure', 'gym', 'workout'],
+  other: [],
+};
+
+const OCCASION_KEYWORDS_MAP: Record<WardrobeOccasionOption, string[]> = {
+  work: ['work', 'office', 'meeting', 'client', 'presentation'],
+  weekend: ['weekend', 'brunch', 'saturday', 'sunday', 'errands'],
+  date: ['date', 'romantic', 'dinner date'],
+  family: ['family', 'family lunch', 'family dinner', 'family gathering', 'family event', 'kids', 'lunch'],
+  travel: ['travel', 'flight', 'airport', 'road trip', 'vacation', 'getaway'],
+  party: ['party', 'celebration', 'birthday', 'festive'],
+  'formal-event': ['formal event', 'ceremony', 'banquet'],
+  outdoor: ['outdoor', 'hiking', 'camping', 'park', 'picnic'],
+  athletic: ['gym', 'workout', 'run', 'running', 'training', 'athletic', 'yoga', 'pilates'],
+  lounging: ['lounging', 'at home', 'movie night', 'relaxing', 'lazy day'],
+  wedding: ['wedding', 'bridal', 'rehearsal dinner'],
+  other: [],
+};
+
+const SEASON_KEYWORDS_MAP: Record<WardrobeSeasonOption, string[]> = {
+  winter: ['winter', 'snow', 'snowy', 'freezing', 'cold', 'chilly', 'icy', 'frosty', 'below zero'],
+  fall: ['fall', 'autumn', 'crisp', 'breezy', 'october', 'november', 'leaf'],
+  spring: ['spring', 'bloom', 'april', 'may', 'rainy', 'drizzle', 'breezy'],
+  summer: ['summer', 'heat', 'hot', 'humid', 'sweltering', 'beach', 'vacation weather', 'july', 'august'],
+  'all-season': [],
+};
+
+const STYLE_TAG_KEYWORDS_MAP: Record<WardrobeStyleTagOption, string[]> = {
+  minimalist: ['minimalist', 'minimal', 'clean lines'],
+  classic: ['classic', 'timeless', 'traditional'],
+  modern: ['modern', 'contemporary'],
+  trendy: ['trendy', 'of the moment'],
+  edgy: ['edgy', 'bold', 'avant garde', 'avant-garde'],
+  boho: ['boho', 'bohemian'],
+  preppy: ['preppy', 'ivy', 'collegiate'],
+  athleisure: ['athleisure', 'sporty casual'],
+  streetwear: ['streetwear', 'urban', 'street style'],
+  romantic: ['romantic', 'feminine', 'soft'],
+  feminine: ['feminine'],
+  androgynous: ['androgynous', 'gender neutral'],
+  workwear: ['workwear', 'utilitarian'],
+  vintage: ['vintage', 'retro'],
+  sporty: ['sporty', 'athletic inspired'],
+  heritage: ['heritage', 'rugged'],
+  other: [],
+};
+
+const ALWAYS_ALLOW_STYLE_TAGS = new Set<WardrobeStyleTagOption>(['minimalist', 'classic']);
+
+const WEATHER_KEYWORD_RULES: Array<{ keywords: string[]; seasons: WardrobeSeasonOption[]; note: string }> = [
+  { keywords: ['rain', 'rainy', 'drizzle', 'showers'], seasons: ['spring', 'fall'], note: 'rainy weather' },
+  { keywords: ['snow', 'snowy', 'blizzard'], seasons: ['winter'], note: 'snowy conditions' },
+  { keywords: ['humid', 'sticky', 'sweltering'], seasons: ['summer'], note: 'humid heat' },
+  { keywords: ['heatwave', 'heat wave'], seasons: ['summer'], note: 'heat wave' },
+  { keywords: ['cool', 'chilly', 'crisp', 'breezy'], seasons: ['fall', 'spring'], note: 'cool temperatures' },
+];
+
+export interface ExtractedContextFilters {
+  formalities: Set<WardrobeFormalityOption>;
+  occasions: Set<WardrobeOccasionOption>;
+  seasons: Set<WardrobeSeasonOption>;
+  styleTags: Set<WardrobeStyleTagOption>;
+  temperatureNotes: string[];
+  matchedKeywords: Set<string>;
+}
+
+export interface FilteredItemsResult {
+  filteredItems: WardrobeItem[];
+  appliedFilters: {
+    formalities?: WardrobeFormalityOption[];
+    occasions?: WardrobeOccasionOption[];
+    seasons?: WardrobeSeasonOption[];
+    styleTags?: WardrobeStyleTagOption[];
+  };
+}
+
+function normalizePromptValue(value: string | undefined): string {
+  return (value || '').toLowerCase();
+}
+
+function convertCelsiusToFahrenheit(tempC: number): number {
+  return (tempC * 9) / 5 + 32;
+}
+
+function determineSeasonFromTemperature(tempF: number): WardrobeSeasonOption[] {
+  if (tempF <= 40) {
+    return ['winter'];
+  }
+  if (tempF <= 55) {
+    return ['fall', 'winter'];
+  }
+  if (tempF <= 70) {
+    return ['spring', 'fall'];
+  }
+  if (tempF <= 85) {
+    return ['summer', 'spring'];
+  }
+  return ['summer'];
+}
+
+function ensureAllSeasonMatch(
+  itemSeasons: WardrobeSeasonOption[] | undefined,
+  filterSeasons: Set<WardrobeSeasonOption>
+): boolean {
+  if (!itemSeasons || itemSeasons.length === 0 || filterSeasons.size === 0) {
+    return true;
+  }
+  if (itemSeasons.includes('all-season')) {
+    return true;
+  }
+  return itemSeasons.some(season => filterSeasons.has(season));
+}
+
+function matchesAttributeFilter<T extends string>(
+  itemValues: T[] | undefined,
+  filterValues: Set<T>
+): boolean {
+  if (filterValues.size === 0) {
+    return true;
+  }
+  if (!itemValues || itemValues.length === 0) {
+    return true;
+  }
+  return itemValues.some(value => filterValues.has(value));
+}
+
+export function extractContextFilters(text?: string): ExtractedContextFilters {
+  const normalized = normalizePromptValue(text);
+  const result: ExtractedContextFilters = {
+    formalities: new Set<WardrobeFormalityOption>(),
+    occasions: new Set<WardrobeOccasionOption>(),
+    seasons: new Set<WardrobeSeasonOption>(),
+    styleTags: new Set<WardrobeStyleTagOption>(),
+    temperatureNotes: [],
+    matchedKeywords: new Set<string>(),
+  };
+
+  if (!normalized) {
+    return result;
+  }
+
+  const addMatches = <T extends string>(map: Record<T, string[]>, setter: (key: T) => void) => {
+    (Object.entries(map) as Array<[T, string[]]>).forEach(([value, keywords]) => {
+      keywords.forEach(keyword => {
+        const lowerKeyword = keyword.toLowerCase();
+        if (lowerKeyword && normalized.includes(lowerKeyword)) {
+          setter(value);
+          result.matchedKeywords.add(lowerKeyword);
+        }
+      });
+    });
+  };
+
+  addMatches(FORMALITY_KEYWORDS_MAP, key => result.formalities.add(key));
+  addMatches(OCCASION_KEYWORDS_MAP, key => result.occasions.add(key));
+  addMatches(SEASON_KEYWORDS_MAP, key => result.seasons.add(key));
+  addMatches(STYLE_TAG_KEYWORDS_MAP, key => result.styleTags.add(key));
+
+  WEATHER_KEYWORD_RULES.forEach(rule => {
+    rule.keywords.forEach(keyword => {
+      if (normalized.includes(keyword)) {
+        rule.seasons.forEach(season => result.seasons.add(season));
+        result.temperatureNotes.push(rule.note);
+        result.matchedKeywords.add(keyword);
+      }
+    });
+  });
+
+  const temperatureRegex = /(-?\d+(?:\.\d+)?)\s*(?:°|degrees?|deg)?\s*(c|celsius|f|fahrenheit)?/gi;
+  let match: RegExpExecArray | null;
+  while ((match = temperatureRegex.exec(normalized)) !== null) {
+    const rawValue = Number(match[1]);
+    if (Number.isNaN(rawValue)) {
+      continue;
+    }
+    const unit = match[2]?.toLowerCase();
+    const tempF = unit && (unit.startsWith('c')) ? convertCelsiusToFahrenheit(rawValue) : rawValue;
+    const rounded = Math.round(tempF);
+    const inferredSeasons = determineSeasonFromTemperature(tempF);
+    inferredSeasons.forEach(season => result.seasons.add(season));
+    result.temperatureNotes.push(`${rounded}°F`);
+    result.matchedKeywords.add(`${rounded}f`);
+  }
+
+  return result;
+}
+
+export function filterItemsForContext(
+  items: WardrobeItem[],
+  filters: ExtractedContextFilters,
+  selectedItems: WardrobeItem[] = []
+): FilteredItemsResult {
+  const selectedIds = new Set<string>(selectedItems.map(item => item.id));
+  const hasActiveFilters =
+    filters.formalities.size > 0 ||
+    filters.occasions.size > 0 ||
+    filters.seasons.size > 0 ||
+    filters.styleTags.size > 0;
+
+  if (!hasActiveFilters) {
+    return {
+      filteredItems: items,
+      appliedFilters: {},
+    };
+  }
+
+  const filteredItems = items.filter(item => {
+    if (selectedIds.has(item.id)) {
+      return true;
+    }
+
+    const hasAlwaysAllowStyleTag =
+      item.styleTags?.some(tag => ALWAYS_ALLOW_STYLE_TAGS.has(tag as WardrobeStyleTagOption)) ?? false;
+
+    if (hasAlwaysAllowStyleTag) {
+      return true;
+    }
+
+    if (!matchesAttributeFilter(item.formalities, filters.formalities)) {
+      return false;
+    }
+
+    if (!matchesAttributeFilter(item.occasions, filters.occasions)) {
+      return false;
+    }
+
+    if (!ensureAllSeasonMatch(item.seasons, filters.seasons)) {
+      return false;
+    }
+
+    if (!matchesAttributeFilter(item.styleTags, filters.styleTags)) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return {
+    filteredItems,
+    appliedFilters: {
+      formalities: filters.formalities.size > 0 ? Array.from(filters.formalities) : undefined,
+      occasions: filters.occasions.size > 0 ? Array.from(filters.occasions) : undefined,
+      seasons: filters.seasons.size > 0 ? Array.from(filters.seasons) : undefined,
+      styleTags: filters.styleTags.size > 0 ? Array.from(filters.styleTags) : undefined,
+    },
+  };
+}
+
+export function buildContextFilterSummary(
+  appliedFilters: FilteredItemsResult['appliedFilters'],
+  filters: ExtractedContextFilters
+): string | null {
+  const parts: string[] = [];
+
+  if (appliedFilters.formalities && appliedFilters.formalities.length > 0) {
+    parts.push(`Formality preference: ${appliedFilters.formalities.join(', ')}`);
+  }
+  if (appliedFilters.occasions && appliedFilters.occasions.length > 0) {
+    parts.push(`Occasion focus: ${appliedFilters.occasions.join(', ')}`);
+  }
+  if (appliedFilters.seasons && appliedFilters.seasons.length > 0) {
+    parts.push(`Seasonal cues: ${appliedFilters.seasons.join(', ')}`);
+  }
+  if (appliedFilters.styleTags && appliedFilters.styleTags.length > 0) {
+    parts.push(`Style direction: ${appliedFilters.styleTags.join(', ')}`);
+  }
+  if (filters.temperatureNotes.length > 0) {
+    parts.push(`Weather notes: ${filters.temperatureNotes.join(', ')}`);
+  }
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  return parts.join(' | ');
+}
+
+function buildItemAttributeSummary(item: WardrobeItem): string | null {
+  const parts: string[] = [];
+  if (item.colors && item.colors.length > 0) {
+    parts.push(`Colors: ${item.colors.join(', ')}`);
+  }
+  if (item.fabrics && item.fabrics.length > 0) {
+    parts.push(`Fabrics: ${item.fabrics.join(', ')}`);
+  }
+  if (item.pattern) {
+    parts.push(`Pattern: ${item.pattern}`);
+  }
+  if (item.silhouettes && item.silhouettes.length > 0) {
+    parts.push(`Silhouettes: ${item.silhouettes.join(', ')}`);
+  } else if (item.silhouette) {
+    parts.push(`Silhouette: ${item.silhouette}`);
+  }
+  if (item.fit) {
+    parts.push(`Fit: ${item.fit}`);
+  }
+  if (item.formalities && item.formalities.length > 0) {
+    parts.push(`Formality: ${item.formalities.join(', ')}`);
+  }
+  if (item.styleTags && item.styleTags.length > 0) {
+    parts.push(`Style Tags: ${item.styleTags.join(', ')}`);
+  }
+  if (item.seasons && item.seasons.length > 0) {
+    parts.push(`Seasons: ${item.seasons.join(', ')}`);
+  }
+  if (item.occasions && item.occasions.length > 0) {
+    parts.push(`Occasions: ${item.occasions.join(', ')}`);
+  }
+  if (item.brand) {
+    parts.push(`Brand: ${item.brand}`);
+  }
+  if (item.careNotes) {
+    parts.push(`Care: ${item.careNotes}`);
+  }
+  return parts.length > 0 ? parts.join('; ') : null;
+}
+
+const FEEDBACK_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'without', 'this', 'that', 'from', 'into', 'onto', 'over', 'under',
+  'after', 'before', 'while', 'when', 'where', 'what', 'why', 'dont', 'don', 'should', 'would', 'could',
+  'make', 'making', 'have', 'has', 'had', 'been', 'will', 'shall', 'keep', 'no', 'not', 'please',
+  'avoid', 'prefer', 'maybe', 'like', 'love', 'hate', 'family', 'lunch', 'dinner', 'event', 'wear',
+  'wearing', 'look', 'looks', 'feel', 'feels', 'more', 'less', 'really', 'very', 'too', 'much', 'little',
+  'any', 'some', 'just', 'can', 'cant', 'cannot', 'shouldnt', 'wouldnt', 'couldnt'
+]);
 
 const QUICK_ENTRY_MAX_TITLE_LENGTH = 60;
 
@@ -56,6 +436,12 @@ function normalizeCategory(rawCategory: string | undefined, fallbackText: string
   if (/\b(coat|jacket|blazer|outerwear|cardigan|sweater|sweatshirt|hoodie|top|tops|shirt|tee|t-shirt|tank)\b/.test(lowerFallback)) {
     return 'Tops';
   }
+  if (/\b(swim|swimsuit|bikini|tankini|rashguard|rash guard|boardshort|board short)\b/.test(lowerFallback)) {
+    return 'Swimwear';
+  }
+  if (/\b(pajama|pyjama|sleep|nightgown|nightdress|nightwear|lingerie|underwear|panty|brief|robe)\b/.test(lowerFallback)) {
+    return 'Underwear & Sleepwear';
+  }
   if (/\b(bag|purse|belt|hat|scarf|glove|watch|ring|bracelet|necklace|jewelry|earring|earrings|cuff|pendant)\b/.test(lowerFallback)) {
     return 'Accessories';
   }
@@ -84,6 +470,7 @@ export interface GeneratedWardrobeDraftItem {
   title: string;
   category: string;
   description?: string;
+  subCategory?: string;
 }
 
 function stripLeadingMarkers(value: string): string {
@@ -153,6 +540,52 @@ function splitQuickEntrySegments(input: string): string[] {
   return segments;
 }
 
+const tokenize = (value: string): string[] =>
+  (value || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map(token => token.trim())
+    .filter(token => token && !FEEDBACK_STOP_WORDS.has(token));
+
+export function getCoreCategoryFlags(item?: WardrobeItem, fallbackTitle?: string): CoreCategory[] {
+  const flags = new Set<CoreCategory>();
+  const collectedStrings: string[] = [];
+
+  if (item?.category) {
+    const normalized = item.category.toLowerCase();
+    collectedStrings.push(normalized);
+    collectedStrings.push(...normalized.split(/[\s/,-]+/));
+  }
+
+  const title = fallbackTitle || item?.title || '';
+  if (title) {
+    const normalizedTitle = title.toLowerCase();
+    collectedStrings.push(normalizedTitle);
+    collectedStrings.push(...normalizedTitle.split(/[\s/,-]+/));
+  }
+
+  collectedStrings.forEach(value => {
+    if (!value) return;
+    (Object.keys(CORE_CATEGORY_KEYWORDS) as CoreCategory[]).forEach(category => {
+      if (CORE_CATEGORY_KEYWORDS[category].some(keyword => value.includes(keyword))) {
+        flags.add(category);
+      }
+    });
+  MULTI_CATEGORY_KEYWORDS.forEach(entry => {
+    if (entry.keywords.some(keyword => value.includes(keyword))) {
+      entry.categories.forEach(category => flags.add(category));
+    }
+  });
+  });
+
+  return Array.from(flags);
+}
+
+export function resolveCoreCategory(item?: WardrobeItem, fallbackTitle?: string): CoreCategory | null {
+  const categories = getCoreCategoryFlags(item, fallbackTitle);
+  return categories.length > 0 ? categories[0] : null;
+}
+
 function fallbackGenerateWardrobeItems(input: string): GeneratedWardrobeDraftItem[] {
   console.log('[LLM] Using fallback parsing for quick entry items');
   const segments = splitQuickEntrySegments(input);
@@ -181,11 +614,13 @@ function fallbackGenerateWardrobeItems(input: string): GeneratedWardrobeDraftIte
       `Quick entry draft item described as: ${segment}`,
       `Quick entry draft item described as: ${segment}`
     );
+    const subCategory = resolveSubCategory(category, undefined, title, description);
 
     drafts.push({
       title,
       category,
-      ...(description ? { description } : {})
+      ...(description ? { description } : {}),
+      ...(subCategory ? { subCategory } : {})
     });
   }
 
@@ -253,10 +688,12 @@ Use only the listed categories. Respond with valid JSON only. If no items are fo
         }
         const category = normalizeCategory((item?.category || '').toString(), title);
         const description = sanitizeDescription(item?.description ? item.description.toString() : '', title);
+        const subCategory = resolveSubCategory(category, undefined, title, description);
         return {
           title,
           category,
-          ...(description ? { description } : {})
+          ...(description ? { description } : {}),
+          ...(subCategory ? { subCategory } : {})
         } as GeneratedWardrobeDraftItem;
       })
       .filter((item: GeneratedWardrobeDraftItem | null): item is GeneratedWardrobeDraftItem => item !== null);
@@ -391,9 +828,88 @@ export async function generateOutfits(
   feedback?: OutfitFeedback[],
   selectedItems?: WardrobeItem[]
 ): Promise<GeneratedOutfit[]> {
+  const selectedList = selectedItems ?? [];
+  const normalizeTitleKey = (value: string): string =>
+    normalizeWhitespace(stripLeadingMarkers(value || '')).toLowerCase();
+
+  const allItemsList = Object.values(itemsByCategory).flat();
+  const allItemsMap = new Map<string, WardrobeItem>();
+  const itemsByCoreCategory: Record<CoreCategory, WardrobeItem[]> = {
+    tops: [],
+    bottoms: [],
+    shoes: [],
+    accessories: [],
+  };
+
+  allItemsList.forEach(item => {
+    const key = normalizeTitleKey(item.title);
+    allItemsMap.set(key, item);
+    const categories = getCoreCategoryFlags(item, item.title);
+    if (categories.length === 0) {
+      return;
+    }
+    categories.forEach(category => {
+      if (!itemsByCoreCategory[category].some(existing => normalizeTitleKey(existing.title) === key)) {
+        itemsByCoreCategory[category].push(item);
+      }
+    });
+  });
+
+  const hasAccessories = itemsByCoreCategory.accessories.length > 0;
+  const coreCategoriesRequired: CoreCategory[] = hasAccessories
+    ? ['tops', 'bottoms', 'shoes', 'accessories']
+    : ['tops', 'bottoms', 'shoes'];
+
+  const selectedTitleKeys = new Set<string>(selectedList.map(item => normalizeTitleKey(item.title)));
+
+  const dislikedEntries = (feedback || []).filter(entry => entry.type === 'dislike');
+  const dislikeInstructions = dislikedEntries
+    .map(entry => (entry.feedback || '').trim())
+    .filter(Boolean);
+  const dislikedCombinationSummaries = dislikedEntries
+    .map(entry => {
+      const parts: string[] = [];
+      if (entry.prompt && entry.prompt.trim().length > 0) {
+        parts.push(`context: "${entry.prompt.trim()}"`);
+      }
+      if (entry.itemTitles.length > 0) {
+        parts.push(`items: ${entry.itemTitles.join(', ')}`);
+      }
+      if (entry.feedback && entry.feedback.trim().length > 0) {
+        parts.push(`note: ${entry.feedback.trim()}`);
+      }
+      if (parts.length === 0) {
+        return '';
+      }
+      return parts.join(' | ');
+    })
+    .filter(summary => summary.length > 0);
+
+  const shouldAvoidTitle = (_title: string): boolean => false;
+
+  const coreCategoryInstruction = `CORE CATEGORY REQUIREMENTS:
+- Every outfit must include at least one TOP (shirts, knits, blouses, outerwear layers all count as tops).
+- Every outfit must include at least one BOTTOM (pants, jeans, shorts, skirts, dresses, jumpsuits, rompers, overalls all satisfy the bottom requirement).
+- Every outfit must include at least one pair of SHOES.${hasAccessories ? '\n- Accessories are available; include at least one accessory (bags, belts, hats, jewelry, scarves, etc.) in every outfit.' : '\n- Accessories are optional if none are available.'}
+- Garments like dresses, jumpsuits, rompers, and overalls count as BOTH the top and bottom requirements simultaneously.
+Layering multiple tops or outerwear is encouraged, but you must still include a bottom (or a garment that covers both) and shoes in every outfit.`;
+
+
+  const fallbackRunner = () =>
+    generateFallbackOutfits(
+      itemsByCoreCategory,
+      coreCategoriesRequired,
+      allItemsMap,
+      {
+        normalizeTitleKey,
+        shouldAvoidTitle,
+        selectedItems: selectedList,
+      }
+    );
+
   if (!openai) {
     console.warn('[LLM] OpenAI API key missing, using fallback outfit generator');
-    return generateFallbackOutfits(itemsByCategory);
+    return fallbackRunner();
   }
   try {
     console.log('[LLM] Starting outfit generation...');
@@ -403,8 +919,12 @@ export async function generateOutfits(
       .map(([category, items]) => {
         const itemsList = items.map(item => {
           let itemDesc = item.title;
+          const attributeSummary = buildItemAttributeSummary(item);
+          if (attributeSummary) {
+            itemDesc += ` {${attributeSummary}}`;
+          }
           if (item.description) {
-            itemDesc += ` (${item.description})`;
+            itemDesc += ` — ${item.description}`;
           }
           if (item.measurements) {
             const measurementsStr = Object.entries(item.measurements)
@@ -546,6 +1066,14 @@ export async function generateOutfits(
       }
     }
 
+    if (dislikedCombinationSummaries.length > 0) {
+      feedbackContext += ` The user previously disliked these outfit combinations or scenarios: ${dislikedCombinationSummaries.join(' | ')}. Use this feedback to adjust pairings, styling, or supporting pieces while keeping the referenced items available for fresh interpretations.`;
+    }
+
+    if (dislikeInstructions.length > 0) {
+      feedbackContext += ` Additional dislike notes to consider: ${dislikeInstructions.map(text => `"${text}"`).join(' ')}. Address these concerns through styling choices or complementary items rather than removing the referenced pieces outright.`;
+    }
+
     // Build a list of all exact item titles for reference
     const allExactTitles = Object.values(itemsByCategory).flat().map(item => item.title).join(', ');
     
@@ -569,6 +1097,12 @@ export async function generateOutfits(
           2. It's the only item available in that category (then it's acceptable to repeat)
           Otherwise, vary the items across outfits - use different tops, different bottoms, different shoes, etc. to create diverse outfit combinations.
           
+          ${coreCategoryInstruction}
+          
+          FEEDBACK COMPLIANCE:
+          - Interpret user dislike feedback in context. Avoid recreating the exact combinations, pairings, or styling choices they rejected, but feel free to reuse the individual items when you can address their concerns through new styling or supporting pieces.
+          - If the user asked to avoid certain descriptors for a scenario (e.g., "no platform boots for a family lunch"), respect that scenario-specific restriction while keeping the items available for other contexts.
+          
           For each outfit, provide:
           1. A list of item titles (up to 10 pieces) - MUST be exact matches from the wardrobe
           2. A justification explaining why you chose this specific combination
@@ -582,7 +1116,7 @@ export async function generateOutfits(
         },
         {
           role: 'user',
-          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}Generate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nVARIETY REQUIREMENT: Create VARIETY across the 5 outfits. Do NOT use the same item in all 5 outfits unless:
+          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}${coreCategoryInstruction}\n\nGenerate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nVARIETY REQUIREMENT: Create VARIETY across the 5 outfits. Do NOT use the same item in all 5 outfits unless:
 1. The user explicitly selected that item (then it MUST appear in all outfits)
 2. It's the only item available in that category (then it's acceptable to repeat)
 
@@ -675,63 +1209,229 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
         console.error('[LLM] Parse error details:', parseError.message);
       }
       console.log('[LLM] Using fallback outfit generation');
-      outfits = generateFallbackOutfits(itemsByCategory);
+      return fallbackRunner();
     }
 
-    // Validate and filter outfits
-    const allItemTitles = Object.values(itemsByCategory).flat().map(item => item.title);
+    const allItemTitles = allItemsList.map(item => item.title);
     const beforeFilter = outfits.length;
-    
-    // Post-process to remove redundant items if selected items include lower-body-covering garments
-    if (selectedItems && selectedItems.length > 0) {
-      const lowerBodyCoveringKeywords = ['overall', 'jumpsuit', 'romper', 'onesie'];
-      const hasLowerBodyCovering = selectedItems.some(item => {
+
+    outfits = outfits.map(outfit => {
+      const canonicalTitles: string[] = [];
+      const seen = new Set<string>();
+      for (const title of outfit.items || []) {
+        const item = allItemsMap.get(normalizeTitleKey(title));
+        if (!item) {
+          console.log(`[LLM] Removing unknown item from outfit: ${title}`);
+          continue;
+        }
+        const canonicalTitle = item.title;
+        const key = normalizeTitleKey(canonicalTitle);
+        if (seen.has(key)) {
+          continue;
+        }
+        if (shouldAvoidTitle(canonicalTitle)) {
+          console.log(`[LLM] Removing item due to dislike feedback: ${canonicalTitle}`);
+          continue;
+        }
+        seen.add(key);
+        canonicalTitles.push(canonicalTitle);
+      }
+      return {
+        ...outfit,
+        items: canonicalTitles,
+      };
+    });
+
+    if (selectedList.length > 0) {
+      const lowerBodyCoveringKeywords = ['overall', 'jumpsuit', 'romper', 'onesie', 'dress', 'dresses'];
+      const hasLowerBodyCovering = selectedList.some(item => {
         const titleLower = item.title.toLowerCase();
         const descLower = (item.description || '').toLowerCase();
         const categoryLower = (item.category || '').toLowerCase();
-        return lowerBodyCoveringKeywords.some(keyword => 
+        return lowerBodyCoveringKeywords.some(keyword =>
           titleLower.includes(keyword) || descLower.includes(keyword) || categoryLower.includes(keyword)
         );
       });
-      
+
       if (hasLowerBodyCovering) {
-        const redundantKeywords = ['pant', 'trouser', 'short', 'skirt', 'dress'];
+        const redundantKeywords = ['pant', 'pants', 'trouser', 'trousers', 'short', 'shorts', 'skirt', 'skirts', 'dress'];
         outfits = outfits.map(outfit => ({
           ...outfit,
           items: outfit.items.filter(itemTitle => {
-            // Keep selected items
-            if (selectedItems.some(selected => selected.title === itemTitle)) {
+            const itemKey = normalizeTitleKey(itemTitle);
+            if (selectedTitleKeys.has(itemKey)) {
               return true;
             }
-            // Remove redundant bottom-wear items
-            const titleLower = itemTitle.toLowerCase();
-            const isRedundant = redundantKeywords.some(keyword => titleLower.includes(keyword));
+            const isRedundant = redundantKeywords.some(keyword => itemTitle.toLowerCase().includes(keyword));
             if (isRedundant) {
               console.log(`[LLM] Filtering out redundant item: ${itemTitle} (conflicts with lower-body-covering selected item)`);
             }
             return !isRedundant;
           })
         }));
-        console.log(`[LLM] Post-processed outfits to remove redundant bottom-wear items`);
+        console.log('[LLM] Post-processed outfits to remove redundant bottom-wear items');
       }
     }
-    
-    // Validate and filter outfits
+
+    const categoryRotationIndex: Record<CoreCategory, number> = {
+      tops: 0,
+      bottoms: 0,
+      shoes: 0,
+      accessories: 0,
+    };
+
+    const pickItemForCategory = (category: CoreCategory, usedNormalized: Set<string>): WardrobeItem | null => {
+      const pool = itemsByCoreCategory[category];
+      if (!pool || pool.length === 0) {
+        return null;
+      }
+      for (let offset = 0; offset < pool.length; offset++) {
+        const index = (categoryRotationIndex[category] + offset) % pool.length;
+        const candidate = pool[index];
+        const key = normalizeTitleKey(candidate.title);
+        if (usedNormalized.has(key)) {
+          continue;
+        }
+        if (shouldAvoidTitle(candidate.title)) {
+          continue;
+        }
+        categoryRotationIndex[category] = (index + 1) % pool.length;
+        return candidate;
+      }
+      return null;
+    };
+
+    const enrichOutfitWithCoreCategories = (outfit: GeneratedOutfit): { outfit: GeneratedOutfit; valid: boolean } => {
+      const usedNormalized = new Set<string>();
+      const enrichedItems: string[] = [];
+
+      selectedList.forEach(item => {
+        const key = normalizeTitleKey(item.title);
+        if (!usedNormalized.has(key)) {
+          enrichedItems.push(item.title);
+          usedNormalized.add(key);
+        }
+      });
+
+      (outfit.items || []).forEach(title => {
+        const item = allItemsMap.get(normalizeTitleKey(title));
+        if (!item) {
+          return;
+        }
+        const key = normalizeTitleKey(item.title);
+        if (usedNormalized.has(key)) {
+          return;
+        }
+        enrichedItems.push(item.title);
+        usedNormalized.add(key);
+      });
+
+      const counts: Record<CoreCategory, number> = { tops: 0, bottoms: 0, shoes: 0, accessories: 0 };
+      enrichedItems.forEach(title => {
+        const item = allItemsMap.get(normalizeTitleKey(title));
+        if (!item) {
+          return;
+        }
+        const flags = getCoreCategoryFlags(item, item.title);
+        if (flags.length === 0) {
+          return;
+        }
+        flags.forEach(flag => {
+          counts[flag] = (counts[flag] || 0) + 1;
+        });
+      });
+
+      for (const category of coreCategoriesRequired) {
+        if (counts[category] === 0) {
+          const addedItem = pickItemForCategory(category, usedNormalized);
+          if (!addedItem) {
+            return { outfit: { ...outfit, items: enrichedItems }, valid: false };
+          }
+          const key = normalizeTitleKey(addedItem.title);
+          if (!usedNormalized.has(key)) {
+            enrichedItems.push(addedItem.title);
+            usedNormalized.add(key);
+            const flags = getCoreCategoryFlags(addedItem, addedItem.title);
+            flags.forEach(flag => {
+              counts[flag] = (counts[flag] || 0) + 1;
+            });
+          }
+        }
+      }
+
+      const uniqueItems = Array.from(new Set(enrichedItems)).slice(0, 10);
+      const finalCounts: Record<CoreCategory, number> = { tops: 0, bottoms: 0, shoes: 0, accessories: 0 };
+      uniqueItems.forEach(title => {
+        const item = allItemsMap.get(normalizeTitleKey(title));
+        if (!item) {
+          return;
+        }
+        const flags = getCoreCategoryFlags(item, item.title);
+        flags.forEach(flag => {
+          finalCounts[flag] = (finalCounts[flag] || 0) + 1;
+        });
+      });
+
+      const valid = coreCategoriesRequired.every(category => finalCounts[category] > 0);
+      return { outfit: { ...outfit, items: uniqueItems }, valid };
+    };
+
+    const processedOutfits: GeneratedOutfit[] = [];
+    outfits.forEach((outfit, index) => {
+      const result = enrichOutfitWithCoreCategories(outfit);
+      if (result.valid) {
+        processedOutfits.push(result.outfit);
+      } else {
+        console.warn(`[LLM] Outfit ${index + 1} failed core category requirements and will be discarded.`);
+      }
+    });
+
+    outfits = processedOutfits;
+
+    if (outfits.length < 5) {
+      console.warn(`[LLM] Only ${outfits.length} valid outfits after enforcement. Supplementing with fallback outfits.`);
+      const fallbackOutfits = fallbackRunner();
+      for (const fallbackOutfit of fallbackOutfits) {
+        if (outfits.length >= 5) {
+          break;
+        }
+        const result = enrichOutfitWithCoreCategories(fallbackOutfit);
+        if (result.valid) {
+          outfits.push(result.outfit);
+        }
+      }
+    }
+
     outfits = outfits
       .map(outfit => ({
         ...outfit,
-        items: outfit.items.filter(title => allItemTitles.includes(title)).slice(0, 10) // Limit to 10 items
+        items: outfit.items
+          .filter(title => allItemTitles.includes(title))
+          .slice(0, 10)
       }))
-      .filter(outfit => outfit.items.length > 0)
-      .slice(0, 7); // Limit to 7 outfits
-    
+      .filter(outfit => {
+        const counts: Record<CoreCategory, number> = { tops: 0, bottoms: 0, shoes: 0, accessories: 0 };
+        outfit.items.forEach(title => {
+          const item = allItemsMap.get(normalizeTitleKey(title));
+          if (!item) {
+            return;
+          }
+          const flags = getCoreCategoryFlags(item, item.title);
+          flags.forEach(flag => {
+            counts[flag] = (counts[flag] || 0) + 1;
+          });
+        });
+        return coreCategoriesRequired.every(category => counts[category] > 0);
+      })
+      .slice(0, 5);
+
     if (beforeFilter !== outfits.length) {
       console.log(`[LLM] Filtered outfits: ${beforeFilter} -> ${outfits.length}`);
     }
 
     if (outfits.length === 0) {
       console.log('[LLM] No valid outfits generated, using fallback');
-      return generateFallbackOutfits(itemsByCategory);
+      return fallbackRunner();
     }
     
     console.log(`[LLM] Successfully generated ${outfits.length} outfit combinations`);
@@ -749,7 +1449,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
       console.error('[LLM] Stack:', error.stack);
     }
     console.log('[LLM] Using fallback outfit generation');
-    return generateFallbackOutfits(itemsByCategory);
+    return fallbackRunner();
   }
 }
 
@@ -923,37 +1623,130 @@ export async function generateExploreSuggestions(
 }
 
 function generateFallbackOutfits(
-  itemsByCategory: Record<string, WardrobeItem[]>
+  itemsByCoreCategory: Record<CoreCategory, WardrobeItem[]>,
+  coreCategoriesRequired: CoreCategory[],
+  allItemsMap: Map<string, WardrobeItem>,
+  options: {
+    normalizeTitleKey: (title: string) => string;
+    shouldAvoidTitle: (title: string) => boolean;
+    selectedItems: WardrobeItem[];
+  },
+  maxOutfits = 5
 ): GeneratedOutfit[] {
   console.log('[LLM] Generating fallback outfits...');
+
   const outfits: GeneratedOutfit[] = [];
-  const categories = Object.keys(itemsByCategory);
-  
-  if (categories.length < 2) {
-    console.log('[LLM] Not enough categories for fallback outfits');
+  if (coreCategoriesRequired.some(category => (itemsByCoreCategory[category] || []).length === 0)) {
+    console.log('[LLM] Not enough category coverage for fallback outfits');
     return outfits;
   }
 
-  // Generate simple combinations
-  for (let i = 0; i < Math.min(5, categories.length); i++) {
-    const category1 = categories[i % categories.length];
-    const category2 = categories[(i + 1) % categories.length];
-    
-    const items1 = itemsByCategory[category1];
-    const items2 = itemsByCategory[category2];
-    
-    if (items1.length > 0 && items2.length > 0) {
-      outfits.push({
-        items: [
-          items1[0].title,
-          items2[0].title
-        ],
-        justification: `A simple combination of ${category1} and ${category2}`,
-        stylingSuggestions: ['Pair these items together for a casual look.']
-      });
+  const selectedNormalized = new Set<string>(
+    options.selectedItems.map(item => options.normalizeTitleKey(item.title))
+  );
+
+  const categoryRotationIndex: Record<CoreCategory, number> = {
+    tops: 0,
+    bottoms: 0,
+    shoes: 0,
+    accessories: 0,
+  };
+
+  const pickFromCategory = (category: CoreCategory, usedNormalized: Set<string>): WardrobeItem | null => {
+    const pool = itemsByCoreCategory[category];
+    if (!pool || pool.length === 0) {
+      return null;
     }
+
+    for (let offset = 0; offset < pool.length; offset++) {
+      const index = (categoryRotationIndex[category] + offset) % pool.length;
+      const candidate = pool[index];
+      const key = options.normalizeTitleKey(candidate.title);
+      if (usedNormalized.has(key)) {
+        continue;
+      }
+      if (selectedNormalized.has(key)) {
+        continue;
+      }
+      if (options.shouldAvoidTitle(candidate.title)) {
+        continue;
+      }
+      categoryRotationIndex[category] = (index + 1) % pool.length;
+      return candidate;
+    }
+
+    return null;
+  };
+
+  for (let i = 0; i < maxOutfits; i++) {
+    const usedNormalized = new Set<string>();
+    const items: string[] = [];
+
+    options.selectedItems.forEach(item => {
+      const key = options.normalizeTitleKey(item.title);
+      if (!usedNormalized.has(key)) {
+        items.push(item.title);
+        usedNormalized.add(key);
+      }
+    });
+
+    const counts: Record<CoreCategory, number> = { tops: 0, bottoms: 0, shoes: 0, accessories: 0 };
+    items.forEach(title => {
+      const item = allItemsMap.get(options.normalizeTitleKey(title));
+      if (!item) {
+        return;
+      }
+      const flags = getCoreCategoryFlags(item, item.title);
+      flags.forEach(flag => {
+        counts[flag] = (counts[flag] || 0) + 1;
+      });
+    });
+
+    let valid = true;
+    for (const category of coreCategoriesRequired) {
+      if (counts[category] === 0) {
+        const candidate = pickFromCategory(category, usedNormalized);
+        if (!candidate) {
+          valid = false;
+          break;
+        }
+        const key = options.normalizeTitleKey(candidate.title);
+        items.push(candidate.title);
+        usedNormalized.add(key);
+        const flags = getCoreCategoryFlags(candidate, candidate.title);
+        flags.forEach(flag => {
+          counts[flag] = (counts[flag] || 0) + 1;
+        });
+      }
+    }
+
+    if (!valid) {
+      continue;
+    }
+
+    const uniqueItems = Array.from(new Set(items)).slice(0, 10);
+    const justification = `Essential look featuring ${coreCategoriesRequired
+      .map(category => {
+        const count = uniqueItems.filter(title => {
+          const item = allItemsMap.get(options.normalizeTitleKey(title));
+          if (!item) {
+            return false;
+          }
+          const flags = getCoreCategoryFlags(item, item.title);
+          return flags.includes(category);
+        }).length;
+        const label = category.charAt(0).toUpperCase() + category.slice(1);
+        return `${count} ${label}${count === 1 ? '' : 's'}`;
+      })
+      .join(', ')}`;
+
+    outfits.push({
+      items: uniqueItems,
+      justification,
+      stylingSuggestions: ['Mix and match layers, adjust proportions, and coordinate accessories for balance.'],
+    });
   }
-  
+
   console.log(`[LLM] Generated ${outfits.length} fallback outfits`);
   return outfits;
 }

@@ -496,12 +496,16 @@ describe('API Integration Tests', () => {
       const items = itemsResponse.body as any[];
 
       const itemTitleLookup = new Map<string, string>();
+      const itemIdLookup = new Map<string, string>();
       items.forEach(item => {
         itemTitleLookup.set(normalize(item.title), item.title);
+        itemIdLookup.set(normalize(item.title), item.id);
       });
 
       const expectedTopNormalized = normalize('Test T-Shirt');
       const expectedBottomNormalized = normalize('Test Jeans');
+      const expectedTopId = itemIdLookup.get(expectedTopNormalized);
+      const expectedBottomId = itemIdLookup.get(expectedBottomNormalized);
 
       const response = await apiRequest('GET', '/api/outfits/saved');
       expect(response.status).toBe(200);
@@ -510,11 +514,32 @@ describe('API Integration Tests', () => {
       
       // Check seeded outfit details
       const seededOutfit = response.body.find((outfit: any) => {
-        const normalizedTitles = outfit.itemTitles.map((title: string) => normalize(title));
-        return normalizedTitles.includes(expectedTopNormalized) && normalizedTitles.includes(expectedBottomNormalized);
+        const itemIds = Array.isArray(outfit.itemIds) ? new Set(outfit.itemIds) : new Set<string>();
+        const normalizedTitles = (outfit.itemTitles || []).map((title: string) => normalize(title));
+        const titleSet = new Set(normalizedTitles);
+
+        const matchesIds =
+          itemIds.size > 0 &&
+          (!expectedTopId || itemIds.has(expectedTopId)) &&
+          (!expectedBottomId || itemIds.has(expectedBottomId));
+
+        const matchesTitles =
+          titleSet.has(expectedTopNormalized) &&
+          titleSet.has(expectedBottomNormalized);
+
+        return matchesIds || matchesTitles;
       });
       expect(seededOutfit).toBeDefined();
       expect(seededOutfit).toHaveProperty('id');
+      expect(seededOutfit).toHaveProperty('itemIds');
+      expect(Array.isArray(seededOutfit.itemIds)).toBe(true);
+      expect(seededOutfit.itemIds.length).toBeGreaterThan(0);
+      if (expectedTopId) {
+        expect(seededOutfit.itemIds).toContain(expectedTopId);
+      }
+      if (expectedBottomId) {
+        expect(seededOutfit.itemIds).toContain(expectedBottomId);
+      }
       expect(seededOutfit).toHaveProperty('itemTitles');
       expect(Array.isArray(seededOutfit.itemTitles)).toBe(true);
       const normalizedTitles = seededOutfit.itemTitles.map((title: string) => normalize(title));
@@ -529,8 +554,11 @@ describe('API Integration Tests', () => {
       // Verify all outfits have required fields
       response.body.forEach((outfit: any) => {
         expect(outfit).toHaveProperty('id');
+        expect(outfit).toHaveProperty('itemIds');
+        expect(Array.isArray(outfit.itemIds)).toBe(true);
         expect(outfit).toHaveProperty('itemTitles');
         expect(Array.isArray(outfit.itemTitles)).toBe(true);
+        expect(outfit.itemIds.length).toBeGreaterThan(0);
         expect(outfit.itemTitles.length).toBeGreaterThan(0);
         expect(outfit).toHaveProperty('createdAt');
       });
@@ -543,8 +571,11 @@ describe('API Integration Tests', () => {
       expect(items.length).toBeGreaterThan(0);
       
       // Use actual item titles from the database
-      const itemTitles = items.slice(0, 2).map((item: any) => item.title);
+      const selectedItems = items.slice(0, 2);
+      const itemIds = selectedItems.map((item: any) => item.id);
+      const itemTitles = selectedItems.map((item: any) => item.title);
       const outfitData = {
+        itemIds,
         itemTitles: itemTitles,
         prompt: 'Test outfit generation prompt',
         notes: 'Test outfit notes',
@@ -555,6 +586,9 @@ describe('API Integration Tests', () => {
       
       expect(response.status).toBe(201);
       expect(response.body).toHaveProperty('id');
+      expect(response.body).toHaveProperty('itemIds');
+      expect(Array.isArray(response.body.itemIds)).toBe(true);
+      expect(response.body.itemIds).toEqual(itemIds);
       expect(response.body).toHaveProperty('itemTitles');
       expect(Array.isArray(response.body.itemTitles)).toBe(true);
       expect(response.body.itemTitles).toEqual(itemTitles);
@@ -575,8 +609,11 @@ describe('API Integration Tests', () => {
       // Verify all feedback entries have required fields
       response.body.forEach((fb: any) => {
         expect(fb).toHaveProperty('id');
+        expect(fb).toHaveProperty('itemIds');
         expect(fb).toHaveProperty('itemTitles');
+        expect(Array.isArray(fb.itemIds)).toBe(true);
         expect(Array.isArray(fb.itemTitles)).toBe(true);
+        expect(fb.itemIds.length).toBeGreaterThan(0);
         expect(fb.itemTitles.length).toBeGreaterThan(0);
         expect(fb).toHaveProperty('type');
         expect(['like', 'dislike']).toContain(fb.type);
@@ -593,9 +630,12 @@ describe('API Integration Tests', () => {
       const items = itemsResponse.body;
       expect(items.length).toBeGreaterThan(0);
       
-      const itemTitles = items.slice(0, 2).map((item: any) => item.title);
+      const selectedItems = items.slice(0, 2);
+      const itemIds = selectedItems.map((item: any) => item.id);
+      const itemTitles = selectedItems.map((item: any) => item.title);
       const feedbackData = {
-        itemTitles: itemTitles,
+        itemIds,
+        itemTitles,
         type: 'like',
         feedback: 'Great combination!',
         prompt: 'Test outfit generation prompt',
@@ -609,9 +649,12 @@ describe('API Integration Tests', () => {
       expect(typeof response.body.id).toBe('string');
       expect(response.body.id.length).toBeGreaterThan(0);
       expect(response.body).toHaveProperty('type', 'like');
+      expect(response.body).toHaveProperty('itemIds');
+      expect(Array.isArray(response.body.itemIds)).toBe(true);
+      expect(response.body.itemIds).toEqual(itemIds);
       expect(response.body).toHaveProperty('itemTitles');
       expect(Array.isArray(response.body.itemTitles)).toBe(true);
-      expect(response.body.itemTitles).toEqual(feedbackData.itemTitles);
+      expect(response.body.itemTitles).toEqual(itemTitles);
       expect(response.body).toHaveProperty('feedback', feedbackData.feedback);
       expect(response.body).toHaveProperty('prompt', feedbackData.prompt);
       expect(response.body).toHaveProperty('createdAt');
@@ -624,6 +667,7 @@ describe('API Integration Tests', () => {
       expect(savedFeedback.type).toBe('like');
       expect(savedFeedback.feedback).toBe('Great combination!');
       expect(savedFeedback.prompt).toBe('Test outfit generation prompt');
+      expect(savedFeedback.itemIds).toEqual(itemIds);
       expect(savedFeedback.itemTitles).toEqual(itemTitles);
     });
     
@@ -633,8 +677,11 @@ describe('API Integration Tests', () => {
       const items = itemsResponse.body;
       expect(items.length).toBeGreaterThan(0);
       
-      const itemTitles = items.slice(0, 1).map((item: any) => item.title);
+      const selectedItems = items.slice(0, 1);
+      const itemIds = selectedItems.map((item: any) => item.id);
+      const itemTitles = selectedItems.map((item: any) => item.title);
       const feedbackData = {
+        itemIds,
         itemTitles: itemTitles,
         type: 'dislike',
       };
@@ -645,6 +692,8 @@ describe('API Integration Tests', () => {
       expect(response.status).toBe(201);
       expect(response.body).toHaveProperty('id');
       expect(response.body).toHaveProperty('type', 'dislike');
+      expect(response.body).toHaveProperty('itemIds');
+      expect(response.body.itemIds).toEqual(itemIds);
       expect(response.body).toHaveProperty('itemTitles');
       expect(response.body.itemTitles).toEqual(itemTitles);
       expect(response.body).toHaveProperty('createdAt');
@@ -660,8 +709,11 @@ describe('API Integration Tests', () => {
       const items = itemsResponse.body;
       expect(items.length).toBeGreaterThan(0);
       
-      const itemTitles = items.slice(0, 2).map((item: any) => item.title);
+      const selectedItems = items.slice(0, 2);
+      const itemIds = selectedItems.map((item: any) => item.id);
+      const itemTitles = selectedItems.map((item: any) => item.title);
       const feedbackData = {
+        itemIds,
         itemTitles: itemTitles,
         type: 'like',
         feedback: 'Test feedback to delete',
@@ -679,6 +731,8 @@ describe('API Integration Tests', () => {
       const feedbackBeforeDelete = beforeDeleteResponse.body.find((fb: any) => fb.id === feedbackId);
       expect(feedbackBeforeDelete).toBeDefined();
       expect(feedbackBeforeDelete.feedback).toBe('Test feedback to delete');
+      expect(feedbackBeforeDelete.itemIds).toEqual(itemIds);
+      expect(feedbackBeforeDelete.itemTitles).toEqual(itemTitles);
       
       // Delete the feedback
       const deleteResponse = await apiRequest('DELETE', `/api/outfits/feedback/${feedbackId}`);

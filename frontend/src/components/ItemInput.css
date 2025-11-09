@@ -253,6 +253,238 @@
   min-width: 120px;
 }
 
+.attribute-wrapper {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.attribute-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-bottom: 1.25rem;
+  text-align: left;
+  align-self: flex-start;
+  width: 100%;
+}
+
+.attribute-toggle-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #666;
+  cursor: pointer;
+  margin-bottom: 0;
+}
+
+.attribute-arrow {
+  display: inline-block;
+  transition: transform 0.2s ease;
+  transform: rotate(0deg);
+  font-size: 0.72rem;
+  line-height: 1;
+  color: currentColor;
+}
+
+.attribute-arrow.open {
+  transform: rotate(180deg);
+}
+
+.attribute-toggle-summary {
+  font-size: 0.68rem;
+  color: #777;
+  letter-spacing: 0.02em;
+  margin: 0;
+  margin-left: 0;
+  margin-bottom: 0.25rem;
+}
+
+.attribute-section {
+  border: 1px solid #000;
+  background: #f8f8f8;
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  margin-bottom: 1.75rem;
+}
+
+.attribute-intro {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #444;
+  line-height: 1.5;
+}
+
+.attribute-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+}
+
+.attribute-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.attribute-group--wide {
+  grid-column: 1 / -1;
+}
+
+.attribute-group-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #111;
+}
+
+.attribute-autocomplete {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.attribute-autocomplete-control {
+  position: relative;
+}
+
+.attribute-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid #000;
+  background: #fff;
+  cursor: text;
+  min-height: 44px;
+}
+
+.attribute-chips input {
+  border: none;
+  outline: none;
+  font-size: 0.75rem;
+  text-transform: none;
+  letter-spacing: 0;
+  background: transparent;
+  flex: 1;
+  min-width: 120px;
+  padding: 0;
+  margin: 0;
+}
+
+.attribute-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #000;
+  color: #fff;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.attribute-chip button {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.attribute-single-input {
+  width: 100%;
+  border: 1px solid #000;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.attribute-clear {
+  position: absolute;
+  top: 50%;
+  right: 0.65rem;
+  transform: translateY(-50%);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.attribute-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #000;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.attribute-suggestions li {
+  list-style: none;
+}
+
+.attribute-suggestions button {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: none;
+  background: #fff;
+  color: #000;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.attribute-suggestions button:hover {
+  background: #000;
+  color: #fff;
+}
+
+.attribute-suggestions--empty {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  border: 1px solid #000;
+  background: #fff;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  z-index: 10;
+}
+
+.attribute-textarea {
+  width: 100%;
+  border: 1px solid #000;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  resize: vertical;
+  min-height: 120px;
+  background: #fff;
+}
+
 @media (max-width: 768px) {
   .ItemInput {
     padding: 1.5rem 0 2rem 0;
@@ -292,5 +524,18 @@
   .measurements-grid {
     grid-template-columns: 1fr;
     gap: 1rem;
+  }
+
+  .attribute-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .attribute-toggle-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .attribute-toggle-summary {
+    font-size: 0.7rem;
   }
 }

@@ -83,9 +83,11 @@ export async function seedTestData(userId: string) {
   
   // Create test saved outfit
   const outfitId = uuidv4();
+  const referenceItems = items.slice(0, 2);
   await db.insertSavedOutfit(userId, {
     id: outfitId,
-    itemTitles: ['Test T-Shirt', 'Test Jeans'],
+    itemIds: referenceItems.map(item => item.id),
+    itemTitles: referenceItems.map(item => item.title),
     prompt: 'Test outfit generation',
     notes: 'Test notes',
     createdAt: now,

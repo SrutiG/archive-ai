@@ -13,6 +13,8 @@ export const getPlaceholderImage = (category: string): string => {
     'Bags': '/static/placeholder-women-accessories-bag.png',
     'Activewear': '/static/placeholder-women-tops-short-sleeve-crop.png', // Using tops as fallback
     'Underwear': '/static/placeholder-women-tops-short-sleeve-crop.png', // Using tops as fallback
+    'Underwear & Sleepwear': '/static/placeholder-women-tops-short-sleeve-crop.png',
+    'Swimwear': '/static/placeholder-women-tops-short-sleeve-crop.png',
   };
 
   return categoryMap[category] || '/static/placeholder-women-tops-short-sleeve-crop.png'; // Default fallback

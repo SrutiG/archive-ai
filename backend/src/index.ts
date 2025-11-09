@@ -5,9 +5,25 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
-import { generateOutfits, generateExploreSuggestions, generateWardrobeItemsFromText, formatQuickEntryTitle } from './llmService';
+import {
+  generateOutfits,
+  generateExploreSuggestions,
+  generateWardrobeItemsFromText,
+  formatQuickEntryTitle,
+  getCoreCategoryFlags,
+  extractContextFilters,
+  filterItemsForContext,
+  buildContextFilterSummary,
+  type CoreCategory,
+  type FilteredItemsResult,
+} from './llmService';
 import * as db from './database';
 import * as supabaseStorage from './supabaseStorage';
+import {
+  WardrobeSubCategory,
+  listAllSubCategories,
+  resolveSubCategory,
+} from './wardrobeSubcategories';
 
 // Initialize PostgreSQL schema if using PostgreSQL
 if (process.env.DATABASE_URL && typeof db.initializeSchema === 'function') {
@@ -64,6 +80,93 @@ const sanitizeOutfitTitle = (title: string): string =>
 const normalizeOutfitTitleKey = (title: string): string =>
   sanitizeOutfitTitle(title).toLowerCase();
 
+function resolveOutfitItemsFromRequest(
+  userItems: WardrobeItem[],
+  itemIdsInput: unknown,
+  itemTitlesInput: unknown
+): { items: WardrobeItem[]; missingIds: string[]; missingTitles: string[] } {
+  const itemsById = new Map(userItems.map(item => [item.id, item]));
+  const itemsByTitle = new Map(
+    userItems.map(item => [normalizeOutfitTitleKey(item.title), item])
+  );
+
+  const items: WardrobeItem[] = [];
+  const missingIds: string[] = [];
+  const missingTitles: string[] = [];
+
+  const requestedIds = parseStringArrayField(itemIdsInput).map(id => id.trim()).filter(id => id.length > 0);
+  const requestedTitles = parseStringArrayField(itemTitlesInput).map(title => sanitizeOutfitTitle(title));
+
+  if (requestedIds.length > 0) {
+    requestedIds.forEach((id, index) => {
+      let match = itemsById.get(id);
+      if (!match && requestedTitles[index]) {
+        const normalized = normalizeOutfitTitleKey(requestedTitles[index]);
+        match = itemsByTitle.get(normalized);
+      }
+      if (match) {
+        items.push(match);
+      } else {
+        missingIds.push(id);
+      }
+    });
+    return { items, missingIds, missingTitles };
+  }
+
+  requestedTitles.forEach(title => {
+    const normalized = normalizeOutfitTitleKey(title);
+    let match = itemsByTitle.get(normalized);
+    if (match) {
+      items.push(match);
+    } else {
+      missingTitles.push(title);
+    }
+  });
+
+  return { items, missingIds, missingTitles };
+}
+
+const fieldProvided = (body: Record<string, any>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(body, key);
+
+const parseStringArrayField = (value: any): string[] => {
+  let result: string[] = [];
+
+  if (Array.isArray(value)) {
+    result = value.map(entry => (entry ?? '').toString());
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        result = parsed.map(entry => (entry ?? '').toString());
+      } else {
+        result = trimmed.split(',').map(part => part.trim());
+      }
+    } catch {
+      result = trimmed.split(',').map(part => part.trim());
+    }
+  }
+
+  return Array.from(
+    new Set(
+      result
+        .map(entry => entry.trim())
+        .filter(entry => entry.length > 0)
+    )
+  );
+};
+
+const parseTextField = (value: any): string => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.trim();
+};
+
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -103,13 +206,221 @@ const upload = multer({
   }
 });
 
+export type WardrobeColorOption =
+  | 'black'
+  | 'white'
+  | 'gray'
+  | 'navy'
+  | 'blue'
+  | 'green'
+  | 'olive'
+  | 'red'
+  | 'burgundy'
+  | 'pink'
+  | 'purple'
+  | 'yellow'
+  | 'orange'
+  | 'brown'
+  | 'tan'
+  | 'beige'
+  | 'cream'
+  | 'metallic'
+  | 'multicolor'
+  | 'other';
+
+export type WardrobeFabricOption =
+  | 'cotton'
+  | 'linen'
+  | 'silk'
+  | 'wool'
+  | 'cashmere'
+  | 'denim'
+  | 'leather'
+  | 'suede'
+  | 'knit'
+  | 'synthetic'
+  | 'chiffon'
+  | 'satin'
+  | 'velvet'
+  | 'lace'
+  | 'other';
+
+export type WardrobePatternOption =
+  | 'solid'
+  | 'striped'
+  | 'plaid'
+  | 'check'
+  | 'floral'
+  | 'animal'
+  | 'polka-dot'
+  | 'geometric'
+  | 'graphic'
+  | 'abstract'
+  | 'textured'
+  | 'other';
+
+export type WardrobeSilhouetteOption =
+  | 'a-line'
+  | 'column'
+  | 'fit-and-flare'
+  | 'cocoon'
+  | 'trapeze'
+  | 'bodycon'
+  | 'wide-leg'
+  | 'straight-leg'
+  | 'cropped'
+  | 'long-sleeve'
+  | 'short-sleeve'
+  | 'sleeveless'
+  | 'peplum'
+  | 'asymmetrical-hem'
+  | 'v-neck'
+  | 'boat-neck'
+  | 'mock-neck'
+  | 'turtleneck'
+  | 'crew-neck'
+  | 'scoop-neck'
+  | 'square-neck'
+  | 'sweetheart'
+  | 'off-the-shoulder'
+  | 'halter-neck'
+  | 'cowl-neck'
+  | 'hooded'
+  | 'collared'
+  | 'collarless'
+  | 'other';
+
+export type WardrobeFitOption =
+  | 'second-skin'
+  | 'slim'
+  | 'regular'
+  | 'relaxed'
+  | 'oversized'
+  | 'tailored'
+  | 'other';
+
+export type WardrobeFormalityOption =
+  | 'casual'
+  | 'smart-casual'
+  | 'business-casual'
+  | 'business-formal'
+  | 'evening'
+  | 'formal'
+  | 'athleisure'
+  | 'other';
+
+export type WardrobeStyleTagOption =
+  | 'minimalist'
+  | 'classic'
+  | 'modern'
+  | 'trendy'
+  | 'edgy'
+  | 'boho'
+  | 'preppy'
+  | 'athleisure'
+  | 'streetwear'
+  | 'romantic'
+  | 'feminine'
+  | 'androgynous'
+  | 'workwear'
+  | 'vintage'
+  | 'sporty'
+  | 'heritage'
+  | 'other';
+
+export type WardrobeSeasonOption = 'spring' | 'summer' | 'fall' | 'winter' | 'all-season';
+
+export type WardrobeOccasionOption =
+  | 'work'
+  | 'weekend'
+  | 'date'
+  | 'family'
+  | 'travel'
+  | 'party'
+  | 'formal-event'
+  | 'outdoor'
+  | 'athletic'
+  | 'lounging'
+  | 'wedding'
+  | 'other';
+
+export type WardrobeBrandOption =
+  | 'Rick Owens'
+  | 'Maison Margiela'
+  | 'Ann Demeulemeester'
+  | 'Yohji Yamamoto'
+  | 'Comme des Garçons'
+  | 'Issey Miyake'
+  | 'Junya Watanabe'
+  | 'Acne Studios'
+  | 'Helmut Lang'
+  | 'Raf Simons'
+  | 'Dries Van Noten'
+  | 'Balenciaga'
+  | 'Vetements'
+  | 'Dion Lee'
+  | 'Peter Do'
+  | 'The Row'
+  | 'Celine'
+  | 'Loewe'
+  | 'Bottega Veneta'
+  | 'Prada'
+  | 'Miu Miu'
+  | 'Saint Laurent'
+  | 'Gucci'
+  | 'Dior'
+  | 'Chanel'
+  | 'Versace'
+  | 'Fendi'
+  | 'Givenchy'
+  | 'Jil Sander'
+  | 'Marni'
+  | 'Stella McCartney'
+  | 'Vivienne Westwood'
+  | 'Alexander McQueen'
+  | 'Banana Republic'
+  | 'Camper'
+  | 'Professor E'
+  | 'Zara'
+  | 'H&M'
+  | 'COS'
+  | 'Arket'
+  | 'Everlane'
+  | 'Cuyana'
+  | 'Reformation'
+  | 'Aritzia'
+  | 'Ganni'
+  | 'Staud'
+  | 'Nanushka'
+  | 'Totême'
+  | 'Vintage'
+  | 'Thrift'
+  | 'Jean Paul Gaultier'
+  | 'Deadwood'
+  | 'Stussy'
+  | 'Moschino'
+  | 'Other';
+
 // Wardrobe item interface
 export interface WardrobeItem {
   id: string;
   title: string;
   imageUrl?: string; // Optional - can use placeholder images if not provided
   category: string;
+  subCategory?: WardrobeSubCategory;
   description?: string; // Extended description for outfit generation
+  silhouettes?: WardrobeSilhouetteOption[];
+  colors?: WardrobeColorOption[];
+  fabrics?: WardrobeFabricOption[];
+  pattern?: WardrobePatternOption;
+  silhouette?: WardrobeSilhouetteOption; // legacy single value
+  fit?: WardrobeFitOption;
+  formalities?: WardrobeFormalityOption[];
+  styleTags?: WardrobeStyleTagOption[];
+  seasons?: WardrobeSeasonOption[];
+  occasions?: WardrobeOccasionOption[];
+  careNotes?: string;
+  brand?: WardrobeBrandOption;
   measurements?: {
     // Category-specific measurements
     size?: string; // Generic size (S, M, L, XL, etc.)
@@ -147,6 +458,7 @@ export interface UserProfile {
 // Saved outfit interface
 export interface SavedOutfit {
   id: string;
+  itemIds: string[];
   itemTitles: string[];
   createdAt: string;
   prompt?: string; // Context/prompt used to generate this outfit
@@ -156,6 +468,7 @@ export interface SavedOutfit {
 // Outfit feedback interface
 export interface OutfitFeedback {
   id: string;
+  itemIds: string[];
   itemTitles: string[];
   type: 'like' | 'dislike';
   feedback?: string; // Optional user feedback text
@@ -352,7 +665,7 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
   try {
     console.log('Creating new wardrobe item...');
     
-    const { title, category, description, measurements } = req.body;
+    const { title, category, description, measurements, subCategory: providedSubCategory } = req.body;
     
     if (!title) {
       console.error('Title is missing');
@@ -412,14 +725,69 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
       }
     }
 
+    const colorsProvided = fieldProvided(req.body, 'colors');
+    const fabricsProvided = fieldProvided(req.body, 'fabrics');
+    const formalitiesProvided = fieldProvided(req.body, 'formalities');
+    const styleTagsProvided = fieldProvided(req.body, 'styleTags');
+    const seasonsProvided = fieldProvided(req.body, 'seasons');
+    const occasionsProvided = fieldProvided(req.body, 'occasions');
+    const patternProvided = fieldProvided(req.body, 'pattern');
+    const silhouettesProvided = fieldProvided(req.body, 'silhouettes');
+    const silhouetteProvided = fieldProvided(req.body, 'silhouette');
+    const fitProvided = fieldProvided(req.body, 'fit');
+    const brandProvided = fieldProvided(req.body, 'brand');
+    const careNotesProvided = fieldProvided(req.body, 'careNotes');
+
+    const colors = colorsProvided ? parseStringArrayField(req.body.colors) : [];
+    const fabrics = fabricsProvided ? parseStringArrayField(req.body.fabrics) : [];
+    const formalities = formalitiesProvided ? parseStringArrayField(req.body.formalities) : [];
+    const styleTags = styleTagsProvided ? parseStringArrayField(req.body.styleTags) : [];
+    const seasons = seasonsProvided ? parseStringArrayField(req.body.seasons) : [];
+    const occasions = occasionsProvided ? parseStringArrayField(req.body.occasions) : [];
+    const patternValue = patternProvided ? parseTextField(req.body.pattern) : '';
+    const silhouettesValue = silhouettesProvided
+      ? Array.from(
+          new Set(
+            parseStringArrayField(req.body.silhouettes)
+              .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+              .filter((value) => value.length > 0)
+          )
+        )
+      : [];
+    const silhouetteValue = silhouetteProvided
+      ? parseTextField(req.body.silhouette)
+      : silhouettesValue.length > 0
+      ? silhouettesValue[0]
+      : '';
+    const fitValue = fitProvided ? parseTextField(req.body.fit) : '';
+    const brandValue = brandProvided ? parseTextField(req.body.brand) : '';
+    const careNotesValue = careNotesProvided ? parseTextField(req.body.careNotes) : '';
+
+    const resolvedSubCategory = resolveSubCategory(category, providedSubCategory, title, description);
+
     const newItem: WardrobeItem = {
       id: uuidv4(),
       title,
       ...(imageUrl && { imageUrl }), // Only include imageUrl if it exists
       category,
+      ...(resolvedSubCategory ? { subCategory: resolvedSubCategory } : {}),
       description: description || undefined,
       measurements: parsedMeasurements,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      ...(colorsProvided && colors.length > 0 ? { colors: colors as WardrobeColorOption[] } : {}),
+      ...(fabricsProvided && fabrics.length > 0 ? { fabrics: fabrics as WardrobeFabricOption[] } : {}),
+      ...(formalitiesProvided && formalities.length > 0 ? { formalities: formalities as WardrobeFormalityOption[] } : {}),
+      ...(styleTagsProvided && styleTags.length > 0 ? { styleTags: styleTags as WardrobeStyleTagOption[] } : {}),
+      ...(seasonsProvided && seasons.length > 0 ? { seasons: seasons as WardrobeSeasonOption[] } : {}),
+      ...(occasionsProvided && occasions.length > 0 ? { occasions: occasions as WardrobeOccasionOption[] } : {}),
+      ...(patternValue ? { pattern: patternValue as WardrobePatternOption } : {}),
+      ...(silhouettesValue.length > 0
+        ? { silhouettes: silhouettesValue as WardrobeSilhouetteOption[] }
+        : {}),
+      ...(silhouetteValue ? { silhouette: silhouetteValue as WardrobeSilhouetteOption } : {}),
+      ...(fitValue ? { fit: fitValue as WardrobeFitOption } : {}),
+      ...(brandValue ? { brand: brandValue as WardrobeBrandOption } : {}),
+      ...(careNotesValue ? { careNotes: careNotesValue } : {})
     };
 
     const userId = getUserFromRequest(req);
@@ -482,10 +850,18 @@ app.post('/api/items/batch', async (req, res) => {
         continue;
       }
 
+      const resolvedSubCategory = resolveSubCategory(
+        draft.category,
+        draft.subCategory,
+        formattedTitle,
+        draft.description
+      );
+
       const newItem: WardrobeItem = {
         id: uuidv4(),
         title: formattedTitle,
         category: draft.category,
+        ...(resolvedSubCategory ? { subCategory: resolvedSubCategory } : {}),
         description: draft.description,
         createdAt: new Date().toISOString()
       };
@@ -532,23 +908,55 @@ app.post('/api/outfits/generate', async (req, res) => {
       });
     }
 
-    // Group items by category
-    const itemsByCategory = userData.items.reduce((acc: Record<string, WardrobeItem[]>, item: WardrobeItem) => {
-      if (!acc[item.category]) {
-        acc[item.category] = [];
-      }
-      acc[item.category].push(item);
-      return acc;
-    }, {} as Record<string, WardrobeItem[]>);
+    const groupItemsByCategory = (items: WardrobeItem[]): Record<string, WardrobeItem[]> => {
+      return items.reduce((acc: Record<string, WardrobeItem[]>, item: WardrobeItem) => {
+        if (!acc[item.category]) {
+          acc[item.category] = [];
+        }
+        acc[item.category].push(item);
+        return acc;
+      }, {} as Record<string, WardrobeItem[]>);
+    };
 
-    // Check if we have enough items in different categories
-    const categoryCount = Object.keys(itemsByCategory).length;
+    const calculateCoreCategoryCounts = (items: WardrobeItem[]): Record<CoreCategory, number> => {
+      const counts: Record<CoreCategory, number> = {
+        tops: 0,
+        bottoms: 0,
+        shoes: 0,
+        accessories: 0,
+      };
+      items.forEach(item => {
+        const flags = getCoreCategoryFlags(item, item.title);
+        flags.forEach(flag => {
+          counts[flag] = (counts[flag] || 0) + 1;
+        });
+      });
+      return counts;
+    };
+
+    const allItems = userData.items as WardrobeItem[];
+    const originalItemsByCategory = groupItemsByCategory(allItems);
+    const totalItemsCount = allItems.length;
+
+    const categoryCount = Object.keys(originalItemsByCategory).length;
     console.log(`Items grouped into ${categoryCount} categories for user ${userId}`);
     
-    Object.entries(itemsByCategory).forEach(([category, items]) => {
+    Object.entries(originalItemsByCategory).forEach(([category, items]) => {
       const categoryItems = items as WardrobeItem[];
       console.log(`  ${category}: ${categoryItems.length} items`);
     });
+
+    const originalCoreCategoryCounts = calculateCoreCategoryCounts(allItems);
+    const requiredCoreCategories: CoreCategory[] = ['tops', 'bottoms', 'shoes'];
+    const missingCoreCategories = requiredCoreCategories.filter(category => originalCoreCategoryCounts[category] === 0);
+
+    if (missingCoreCategories.length > 0) {
+      console.log(`Missing required core categories for user ${userId}: ${missingCoreCategories.join(', ')}`);
+      return res.status(400).json({
+        error: 'Need at least one top, bottom, and pair of shoes to generate outfits',
+        missingCategories: missingCoreCategories,
+      });
+    }
 
     if (categoryCount < 2) {
       console.log(`Not enough categories for user ${userId}: ${categoryCount} (need at least 2)`);
@@ -574,6 +982,96 @@ app.post('/api/outfits/generate', async (req, res) => {
       });
     }
 
+    const REQUIRED_DISPLAY_CATEGORIES = ['Tops', 'Bottoms', 'Shoes', 'Jewelry'] as const;
+    const categoryCountsMap = allItems.reduce<Record<string, number>>((acc, item) => {
+      acc[item.category] = (acc[item.category] || 0) + 1;
+      return acc;
+    }, {});
+    const hasMinimumPerCategory = REQUIRED_DISPLAY_CATEGORIES.every(categoryLabel => (categoryCountsMap[categoryLabel] || 0) >= 3);
+    const shouldApplyContextFilters = totalItemsCount > 25 && hasMinimumPerCategory;
+
+    if (!shouldApplyContextFilters) {
+      console.log(`[ContextFilter] Skipping context-based filtering (total items: ${totalItemsCount}, category minimum met: ${hasMinimumPerCategory})`);
+    }
+
+    const contextFilters = extractContextFilters(prompt);
+    let itemsForGeneration = allItems;
+    let appliedFilters: FilteredItemsResult['appliedFilters'] | undefined;
+    let filterSummary: string | null = null;
+
+    if (shouldApplyContextFilters) {
+      console.log(
+        `[ContextFilter] Applying context-based filtering (total items: ${totalItemsCount}, ` +
+        `tops: ${categoryCountsMap['Tops'] || 0}, bottoms: ${categoryCountsMap['Bottoms'] || 0}, ` +
+        `shoes: ${categoryCountsMap['Shoes'] || 0}, jewelry: ${categoryCountsMap['Jewelry'] || 0})`
+      );
+      const filterResult = filterItemsForContext(allItems, contextFilters, selectedItems);
+      itemsForGeneration = filterResult.filteredItems;
+      appliedFilters = filterResult.appliedFilters;
+
+      const filteredOutCount = totalItemsCount - itemsForGeneration.length;
+      if (filteredOutCount > 0) {
+        console.log(`[ContextFilter] Removed ${filteredOutCount} items that did not match the prompt context.`);
+      }
+
+      if (itemsForGeneration.length === 0) {
+        const summary = buildContextFilterSummary(appliedFilters, contextFilters);
+        console.warn('[ContextFilter] All items were filtered out by context. Aborting generation.');
+        return res.status(400).json({
+          error: 'No wardrobe items match the provided context filters. Try broadening your request or update your wardrobe attributes.',
+          appliedFilters,
+          filterSummary: summary || undefined,
+        });
+      }
+
+      const filteredItemsByCategory = groupItemsByCategory(itemsForGeneration);
+      const filteredCategoryCount = Object.keys(filteredItemsByCategory).length;
+      console.log(`[ContextFilter] ${filteredCategoryCount} categories remain after filtering for context.`);
+
+      if (filteredCategoryCount < 2) {
+        const summary = buildContextFilterSummary(appliedFilters, contextFilters);
+        console.warn('[ContextFilter] Not enough categories after filtering.');
+        return res.status(400).json({
+          error: 'Context filters left fewer than two categories to build outfits. Broaden the request or add more attributes to your wardrobe items.',
+          appliedFilters,
+          filterSummary: summary || undefined,
+        });
+      }
+
+      const filteredCoreCategoryCounts = calculateCoreCategoryCounts(itemsForGeneration);
+      const missingAfterFilter = requiredCoreCategories.filter(category => (filteredCoreCategoryCounts[category] || 0) === 0);
+
+      if (missingAfterFilter.length > 0) {
+        const summary = buildContextFilterSummary(appliedFilters, contextFilters);
+        console.warn(`[ContextFilter] Missing required categories after filtering: ${missingAfterFilter.join(', ')}`);
+        return res.status(400).json({
+          error: 'Context filters removed required categories needed to generate complete outfits.',
+          missingCategories: missingAfterFilter,
+          appliedFilters,
+          filterSummary: summary || undefined,
+        });
+      }
+
+      filterSummary = buildContextFilterSummary(appliedFilters, contextFilters);
+      if (filterSummary) {
+        console.log(`[ContextFilter] Summary: ${filterSummary}`);
+      }
+      if (appliedFilters) {
+        console.log('[ContextFilter] Applied filters:', appliedFilters);
+      }
+    }
+
+    const itemsByCategory = groupItemsByCategory(itemsForGeneration);
+
+    const promptSegments: string[] = [];
+    if (prompt && prompt.trim().length > 0) {
+      promptSegments.push(prompt.trim());
+    }
+    if (filterSummary) {
+      promptSegments.push(`Context filter summary: ${filterSummary}. Prioritize items that satisfy these attributes.`);
+    }
+    const combinedPrompt = promptSegments.join(' ');
+
     // Generate outfits using LLM with user profile and item descriptions
     console.log('Calling LLM to generate outfit combinations...');
     const userProfile = userData.userProfile || {};
@@ -581,7 +1079,7 @@ app.post('/api/outfits/generate', async (req, res) => {
     if (userProfile.stylePreferences) {
       console.log(`Style preferences: ${userProfile.stylePreferences.substring(0, 100)}...`);
     }
-    const outfits = await generateOutfits(itemsByCategory, userProfile, prompt, userData.outfitFeedback || [], selectedItems);
+    const outfits = await generateOutfits(itemsByCategory, userProfile, combinedPrompt, userData.outfitFeedback || [], selectedItems);
     console.log(`Generated ${outfits.length} outfit combinations`);
     
     const newClicks = userData.outfitGenerationClicks + 1;
@@ -590,11 +1088,20 @@ app.post('/api/outfits/generate', async (req, res) => {
     // Save to database
     await db.updateUserData(userId, newClicks, userData.lastClickResetDate);
 
-    res.json({
+    const responsePayload: Record<string, unknown> = {
       outfits,
       clicksUsed: userData.outfitGenerationClicks,
-      maxClicks: MAX_OUTFIT_CLICKS_PER_DAY
-    });
+      maxClicks: MAX_OUTFIT_CLICKS_PER_DAY,
+    };
+
+    if (appliedFilters) {
+      responsePayload.appliedFilters = appliedFilters;
+    }
+    if (filterSummary) {
+      responsePayload.filterSummary = filterSummary;
+    }
+
+    res.json(responsePayload);
   } catch (error) {
     console.error('Error generating outfits:', error);
     if (error instanceof Error) {
@@ -637,7 +1144,7 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
       console.log(`Item not found: ${id} for user ${userId}`);
       return res.status(404).json({ error: 'Item not found' });
     }
-    const { title, category, description, measurements } = req.body;
+    const { title, category, description, measurements, subCategory: providedSubCategory } = req.body;
     
     if (!title) {
       console.error('Title is missing');
@@ -712,14 +1219,106 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
       }
     }
 
-    // Update the item in database
-    await db.updateItem(id, {
+    const colorsProvided = fieldProvided(req.body, 'colors');
+    const fabricsProvided = fieldProvided(req.body, 'fabrics');
+    const formalitiesProvided = fieldProvided(req.body, 'formalities');
+    const styleTagsProvided = fieldProvided(req.body, 'styleTags');
+    const seasonsProvided = fieldProvided(req.body, 'seasons');
+    const occasionsProvided = fieldProvided(req.body, 'occasions');
+    const patternProvided = fieldProvided(req.body, 'pattern');
+    const silhouettesProvided = fieldProvided(req.body, 'silhouettes');
+    const silhouetteProvided = fieldProvided(req.body, 'silhouette');
+    const fitProvided = fieldProvided(req.body, 'fit');
+    const brandProvided = fieldProvided(req.body, 'brand');
+    const careNotesProvided = fieldProvided(req.body, 'careNotes');
+
+    const colors = colorsProvided ? parseStringArrayField(req.body.colors) : [];
+    const fabrics = fabricsProvided ? parseStringArrayField(req.body.fabrics) : [];
+    const formalities = formalitiesProvided ? parseStringArrayField(req.body.formalities) : [];
+    const styleTags = styleTagsProvided ? parseStringArrayField(req.body.styleTags) : [];
+    const seasons = seasonsProvided ? parseStringArrayField(req.body.seasons) : [];
+    const occasions = occasionsProvided ? parseStringArrayField(req.body.occasions) : [];
+    const patternValue = patternProvided ? parseTextField(req.body.pattern) : '';
+    const silhouettesValue = silhouettesProvided
+      ? Array.from(
+          new Set(
+            parseStringArrayField(req.body.silhouettes)
+              .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
+              .filter((value) => value.length > 0)
+          )
+        )
+      : [];
+    const silhouetteValue = silhouetteProvided
+      ? parseTextField(req.body.silhouette)
+      : silhouettesValue.length > 0
+      ? silhouettesValue[0]
+      : '';
+    const fitValue = fitProvided ? parseTextField(req.body.fit) : '';
+    const brandValue = brandProvided ? parseTextField(req.body.brand) : '';
+    const careNotesValue = careNotesProvided ? parseTextField(req.body.careNotes) : '';
+
+    const resolvedSubCategory = resolveSubCategory(category, providedSubCategory, title, description);
+
+    const updates: Partial<WardrobeItem> = {
       title,
       category,
       description: description || undefined,
       measurements: parsedMeasurements,
       imageUrl
-    });
+    };
+
+    if (resolvedSubCategory) {
+      updates.subCategory = resolvedSubCategory;
+    }
+
+    if (colorsProvided) {
+      updates.colors = colors as WardrobeColorOption[];
+    }
+    if (fabricsProvided) {
+      updates.fabrics = fabrics as WardrobeFabricOption[];
+    }
+    if (formalitiesProvided) {
+      updates.formalities = formalities as WardrobeFormalityOption[];
+    }
+    if (styleTagsProvided) {
+      updates.styleTags = styleTags as WardrobeStyleTagOption[];
+    }
+    if (seasonsProvided) {
+      updates.seasons = seasons as WardrobeSeasonOption[];
+    }
+    if (occasionsProvided) {
+      updates.occasions = occasions as WardrobeOccasionOption[];
+    }
+    if (patternProvided) {
+      updates.pattern = patternValue
+        ? (patternValue as WardrobePatternOption)
+        : undefined;
+    }
+    if (silhouettesProvided) {
+      updates.silhouettes =
+        silhouettesValue.length > 0
+          ? (silhouettesValue as WardrobeSilhouetteOption[])
+          : [];
+    }
+    if (silhouetteProvided || (silhouettesProvided && silhouettesValue.length > 0)) {
+      updates.silhouette = silhouetteValue
+        ? (silhouetteValue as WardrobeSilhouetteOption)
+        : undefined;
+    }
+    if (fitProvided) {
+      updates.fit = fitValue ? (fitValue as WardrobeFitOption) : undefined;
+    }
+    if (brandProvided) {
+      updates.brand = brandValue
+        ? (brandValue as WardrobeBrandOption)
+        : undefined;
+    }
+    if (careNotesProvided) {
+      updates.careNotes = careNotesValue || undefined;
+    }
+
+    // Update the item in database
+    await db.updateItem(id, updates);
 
     const updatedItem = await db.getItemById(id);
     console.log(`Item updated successfully for user ${userId}: "${updatedItem?.title}"`);
@@ -852,10 +1451,31 @@ app.post('/api/user/profile', async (req, res) => {
 // Get available categories
 app.get('/api/categories', (req, res) => {
   const categories = [
-    'Tops', 'Bottoms', 'Dresses', 'Outerwear', 'Shoes', 
-    'Accessories', 'Bags', 'Jewelry', 'Activewear', 'Underwear'
+    'Tops',
+    'Bottoms',
+    'Dresses',
+    'Outerwear',
+    'Shoes',
+    'Accessories',
+    'Bags',
+    'Jewelry',
+    'Activewear',
+    'Underwear & Sleepwear',
+    'Swimwear',
   ];
   res.json(categories);
+});
+
+// Get subcategory options (optionally filtered by category)
+app.get('/api/subcategories', (req, res) => {
+  const allSubcategories = listAllSubCategories();
+  const category = typeof req.query.category === 'string' ? req.query.category : undefined;
+
+  if (category && allSubcategories[category]) {
+    return res.json(allSubcategories[category]);
+  }
+
+  res.json(allSubcategories);
 });
 
 // Get saved outfits
@@ -865,8 +1485,10 @@ app.get('/api/outfits/saved', async (req, res) => {
     const userData = await getUserData(userId);
     console.log(`Returning ${(userData.savedOutfits || []).length} saved outfits for user ${userId}`);
 
+    const itemsById = new Map<string, WardrobeItem>();
     const titleLookup = new Map<string, string>();
     (userData.items || []).forEach((item: WardrobeItem) => {
+      itemsById.set(item.id, item);
       const key = normalizeOutfitTitleKey(item.title);
       if (!titleLookup.has(key)) {
         titleLookup.set(key, item.title);
@@ -875,10 +1497,35 @@ app.get('/api/outfits/saved', async (req, res) => {
 
     const cleanedOutfits = (userData.savedOutfits || []).map((outfit: SavedOutfit) => ({
       ...outfit,
-      itemTitles: (outfit.itemTitles || []).map((title) => {
+      itemIds: Array.isArray(outfit.itemIds)
+        ? outfit.itemIds.filter((id) => typeof id === 'string' && id.trim().length > 0)
+        : [],
+      itemTitles: (() => {
+        const fallbackTitles = (outfit.itemTitles || []).map((title) => {
         const key = normalizeOutfitTitleKey(title);
         return titleLookup.get(key) || formatQuickEntryTitle(title);
-      }),
+        });
+
+        if (Array.isArray(outfit.itemIds) && outfit.itemIds.length > 0) {
+          return outfit.itemIds.map((id, index) => {
+            const item = itemsById.get(id);
+            if (item) {
+              return item.title;
+            }
+            return (
+              fallbackTitles[index] ||
+              fallbackTitles.find(
+                (fallbackTitle) =>
+                  normalizeOutfitTitleKey(fallbackTitle) ===
+                  normalizeOutfitTitleKey(outfit.itemTitles?.[index] ?? '')
+              ) ||
+              formatQuickEntryTitle(outfit.itemTitles?.[index] ?? `Item ${index + 1}`)
+            );
+          });
+        }
+
+        return fallbackTitles;
+      })(),
     }));
 
     res.json(cleanedOutfits);
@@ -893,52 +1540,45 @@ app.post('/api/outfits/save', async (req, res) => {
   try {
     const userId = getUserFromRequest(req);
     const userData = await getUserData(userId);
-    const { itemTitles, prompt, notes } = req.body;
-    
-    if (!itemTitles || !Array.isArray(itemTitles) || itemTitles.length === 0) {
-      return res.status(400).json({ error: 'Item titles are required' });
+    const { itemIds: rawItemIds, itemTitles: rawItemTitles, prompt, notes } = req.body;
+
+    const { items: resolvedItems, missingIds, missingTitles } = resolveOutfitItemsFromRequest(
+      userData.items || [],
+      rawItemIds,
+      rawItemTitles
+    );
+
+    if (resolvedItems.length === 0) {
+      return res.status(400).json({ error: 'At least one valid wardrobe item is required to save an outfit' });
     }
 
-    const titleLookup = new Map<string, string>();
-    (userData.items || []).forEach((item: WardrobeItem) => {
-      const key = normalizeOutfitTitleKey(item.title);
-      if (!titleLookup.has(key)) {
-        titleLookup.set(key, item.title);
-      }
-    });
-
-    const resolvedTitles: string[] = [];
-    const invalidTitles: string[] = [];
-
-    (itemTitles as string[]).forEach((rawTitle) => {
-      const key = normalizeOutfitTitleKey(rawTitle);
-      const match = titleLookup.get(key);
-      if (match) {
-        resolvedTitles.push(match);
-      } else {
-        invalidTitles.push(rawTitle);
-      }
-    });
-
-    if (invalidTitles.length > 0) {
-      return res.status(400).json({ 
-        error: 'Some items not found in wardrobe',
-        invalidItems: invalidTitles
+    if (missingIds.length > 0) {
+      return res.status(400).json({
+        error: 'Some provided item IDs were not found in your wardrobe',
+        missingItemIds: missingIds,
       });
     }
 
+    if (missingTitles.length > 0) {
+      return res.status(400).json({
+        error: 'Some items not found in wardrobe',
+        invalidItems: missingTitles,
+      });
+    }
+
+    const now = new Date().toISOString();
     const newOutfit: SavedOutfit = {
       id: uuidv4(),
-      itemTitles: resolvedTitles,
-      createdAt: new Date().toISOString(),
+      itemIds: resolvedItems.map(item => item.id),
+      itemTitles: resolvedItems.map(item => item.title),
+      createdAt: now,
       prompt: prompt || undefined,
-      notes: notes || undefined
+      notes: notes || undefined,
     };
 
-    // Save to database
     await db.insertSavedOutfit(userId, newOutfit);
-    
-    console.log(`Saved outfit with ${itemTitles.length} items for user ${userId}`);
+
+    console.log(`Saved outfit with ${newOutfit.itemIds.length} items for user ${userId}`);
     res.status(201).json(newOutfit);
   } catch (error) {
     console.error('Error saving outfit:', error);
@@ -978,29 +1618,50 @@ app.delete('/api/outfits/saved/:id', async (req, res) => {
 app.post('/api/outfits/feedback', async (req, res) => {
   try {
     const userId = getUserFromRequest(req);
-    const { itemTitles, type, feedback, prompt } = req.body;
-    
-    if (!itemTitles || !Array.isArray(itemTitles) || itemTitles.length === 0) {
-      return res.status(400).json({ error: 'Item titles are required' });
-    }
+    const userData = await getUserData(userId);
+    const { itemIds: rawItemIds, itemTitles: rawItemTitles, type, feedback, prompt } = req.body;
 
     if (!type || (type !== 'like' && type !== 'dislike')) {
       return res.status(400).json({ error: 'Feedback type must be "like" or "dislike"' });
     }
 
+    const { items: resolvedItems, missingIds, missingTitles } = resolveOutfitItemsFromRequest(
+      userData.items || [],
+      rawItemIds,
+      rawItemTitles
+    );
+
+    if (resolvedItems.length === 0) {
+      return res.status(400).json({ error: 'At least one valid wardrobe item is required to save feedback' });
+    }
+
+    if (missingIds.length > 0) {
+      return res.status(400).json({
+        error: 'Some provided item IDs were not found in your wardrobe',
+        missingItemIds: missingIds,
+      });
+    }
+
+    if (missingTitles.length > 0) {
+      return res.status(400).json({
+        error: 'Some items not found in wardrobe',
+        invalidItems: missingTitles,
+      });
+    }
+
     const newFeedback: OutfitFeedback = {
       id: uuidv4(),
-      itemTitles,
+      itemIds: resolvedItems.map(item => item.id),
+      itemTitles: resolvedItems.map(item => item.title),
       type,
       feedback: feedback || undefined,
       createdAt: new Date().toISOString(),
-      prompt: prompt || undefined
+      prompt: prompt || undefined,
     };
 
-    // Save to database
     await db.insertFeedback(userId, newFeedback);
-    
-    console.log(`Saved ${type} feedback for outfit with ${itemTitles.length} items for user ${userId}`);
+
+    console.log(`Saved ${type} feedback for outfit with ${newFeedback.itemIds.length} items for user ${userId}`);
     res.status(201).json(newFeedback);
   } catch (error) {
     console.error('Error saving feedback:', error);
@@ -1015,7 +1676,54 @@ app.get('/api/outfits/feedback', async (req, res) => {
     const userId = getUserFromRequest(req);
     const userData = await getUserData(userId);
     console.log(`Returning ${(userData.outfitFeedback || []).length} feedback entries for user ${userId}`);
-    res.json(userData.outfitFeedback || []);
+
+    const itemsById = new Map<string, WardrobeItem>();
+    const titleLookup = new Map<string, string>();
+    (userData.items || []).forEach((item: WardrobeItem) => {
+      itemsById.set(item.id, item);
+      const key = normalizeOutfitTitleKey(item.title);
+      if (!titleLookup.has(key)) {
+        titleLookup.set(key, item.title);
+      }
+    });
+
+    const cleanedFeedback = (userData.outfitFeedback || []).map((entry: OutfitFeedback) => {
+      const fallbackTitles = (entry.itemTitles || []).map(title => {
+        const key = normalizeOutfitTitleKey(title);
+        return titleLookup.get(key) || formatQuickEntryTitle(title);
+      });
+
+      const itemIds = Array.isArray(entry.itemIds)
+        ? entry.itemIds.filter((id) => typeof id === 'string' && id.trim().length > 0)
+        : [];
+
+      const itemTitles =
+        itemIds.length > 0
+          ? itemIds.map((id, index) => {
+              const item = itemsById.get(id);
+              if (item) {
+                return item.title;
+              }
+              return (
+                fallbackTitles[index] ||
+                fallbackTitles.find(
+                  (fallbackTitle) =>
+                    normalizeOutfitTitleKey(fallbackTitle) ===
+                    normalizeOutfitTitleKey(entry.itemTitles?.[index] ?? '')
+                ) ||
+                formatQuickEntryTitle(entry.itemTitles?.[index] ?? `Item ${index + 1}`)
+              );
+            })
+          : fallbackTitles;
+
+      return {
+        ...entry,
+        itemIds,
+        itemTitles,
+      };
+    });
+
+    res.json(cleanedFeedback);
   } catch (error) {
     console.error('Error fetching feedback:', error);
     res.status(500).json({ error: 'Failed to fetch feedback' });

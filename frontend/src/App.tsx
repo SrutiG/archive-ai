@@ -9,12 +9,152 @@ import WardrobePage from './pages/WardrobePage';
 import OutfitsPage from './pages/OutfitsPage';
 import ExplorePage from './pages/ExplorePage';
 
+export type WardrobeColorOption =
+  | 'black'
+  | 'white'
+  | 'gray'
+  | 'navy'
+  | 'blue'
+  | 'green'
+  | 'olive'
+  | 'red'
+  | 'burgundy'
+  | 'pink'
+  | 'purple'
+  | 'yellow'
+  | 'orange'
+  | 'brown'
+  | 'tan'
+  | 'beige'
+  | 'cream'
+  | 'metallic'
+  | 'multicolor'
+  | 'other';
+
+export type WardrobeFabricOption =
+  | 'cotton'
+  | 'linen'
+  | 'silk'
+  | 'wool'
+  | 'cashmere'
+  | 'denim'
+  | 'leather'
+  | 'suede'
+  | 'knit'
+  | 'synthetic'
+  | 'chiffon'
+  | 'satin'
+  | 'velvet'
+  | 'lace'
+  | 'other';
+
+export type WardrobePatternOption =
+  | 'solid'
+  | 'striped'
+  | 'plaid'
+  | 'check'
+  | 'floral'
+  | 'animal'
+  | 'polka-dot'
+  | 'geometric'
+  | 'graphic'
+  | 'abstract'
+  | 'textured'
+  | 'other';
+
+export type WardrobeSilhouetteOption =
+  | 'a-line'
+  | 'column'
+  | 'fit-and-flare'
+  | 'cocoon'
+  | 'trapeze'
+  | 'bodycon'
+  | 'wide-leg'
+  | 'straight-leg'
+  | 'cropped'
+  | 'long-sleeve'
+  | 'short-sleeve'
+  | 'sleeveless'
+  | 'peplum'
+  | 'asymmetrical-hem'
+  | 'v-neck'
+  | 'boat-neck'
+  | 'mock-neck'
+  | 'turtleneck'
+  | 'other';
+
+export type WardrobeFitOption =
+  | 'second-skin'
+  | 'slim'
+  | 'regular'
+  | 'relaxed'
+  | 'oversized'
+  | 'tailored'
+  | 'other';
+
+export type WardrobeFormalityOption =
+  | 'casual'
+  | 'smart-casual'
+  | 'business-casual'
+  | 'business-formal'
+  | 'evening'
+  | 'formal'
+  | 'athleisure'
+  | 'other';
+
+export type WardrobeStyleTagOption =
+  | 'minimalist'
+  | 'classic'
+  | 'modern'
+  | 'trendy'
+  | 'edgy'
+  | 'boho'
+  | 'preppy'
+  | 'athleisure'
+  | 'streetwear'
+  | 'romantic'
+  | 'feminine'
+  | 'androgynous'
+  | 'workwear'
+  | 'vintage'
+  | 'sporty'
+  | 'heritage'
+  | 'other';
+
+export type WardrobeSeasonOption = 'spring' | 'summer' | 'fall' | 'winter' | 'all-season';
+
+export type WardrobeOccasionOption =
+  | 'work'
+  | 'weekend'
+  | 'date'
+  | 'family'
+  | 'travel'
+  | 'party'
+  | 'formal-event'
+  | 'outdoor'
+  | 'athletic'
+  | 'lounging'
+  | 'wedding'
+  | 'other';
+
 export interface WardrobeItem {
   id: string;
   title: string;
   imageUrl: string;
   category: string;
+  subCategory?: string;
   description?: string;
+  silhouettes?: WardrobeSilhouetteOption[];
+  colors?: WardrobeColorOption[];
+  fabrics?: WardrobeFabricOption[];
+  pattern?: WardrobePatternOption;
+  silhouette?: WardrobeSilhouetteOption;
+  fit?: WardrobeFitOption;
+  formalities?: WardrobeFormalityOption[];
+  styleTags?: WardrobeStyleTagOption[];
+  seasons?: WardrobeSeasonOption[];
+  occasions?: WardrobeOccasionOption[];
+  careNotes?: string;
   measurements?: {
     size?: string;
     waist?: number;

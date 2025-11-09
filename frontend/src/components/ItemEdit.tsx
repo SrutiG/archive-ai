@@ -5,6 +5,7 @@ import { SectionHeader, Button } from '../design-system';
 import { getMeasurementFields, Measurements as MeasurementsType } from '../utils/measurementFields';
 import { useCamera } from '../hooks/useCamera';
 import { apiGet, apiUpload } from '../utils/api';
+import WardrobeAttributeFields from './WardrobeAttributeFields';
 
 interface ItemEditProps {
   item: WardrobeItem;
@@ -18,15 +19,55 @@ type Measurements = MeasurementsType;
 const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiUrl }) => {
   const [title, setTitle] = useState(item.title);
   const [category, setCategory] = useState(item.category);
+  const [subCategory, setSubCategory] = useState(item.subCategory || '');
   const [description, setDescription] = useState(item.description || '');
   const [categories, setCategories] = useState<string[]>([]);
+  const [subcategories, setSubcategories] = useState<Record<string, string[]>>({});
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [previewLoaded, setPreviewLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [measurements, setMeasurements] = useState<Measurements>(item.measurements || {});
+  const [selectedColors, setSelectedColors] = useState<string[]>(item.colors || []);
+  const [selectedFabrics, setSelectedFabrics] = useState<string[]>(item.fabrics || []);
+  const [selectedSilhouettes, setSelectedSilhouettes] = useState<string[]>(
+    item.silhouettes && item.silhouettes.length > 0
+      ? item.silhouettes
+      : item.silhouette
+      ? [item.silhouette]
+      : []
+  );
+  const [selectedFormalities, setSelectedFormalities] = useState<string[]>(item.formalities || []);
+  const [selectedStyleTags, setSelectedStyleTags] = useState<string[]>(item.styleTags || []);
+  const [selectedSeasons, setSelectedSeasons] = useState<string[]>(item.seasons || []);
+  const [selectedOccasions, setSelectedOccasions] = useState<string[]>(item.occasions || []);
+  const [pattern, setPattern] = useState(item.pattern || '');
+  const [fit, setFit] = useState(item.fit || '');
+  const [brand, setBrand] = useState(item.brand || '');
+  const [careNotes, setCareNotes] = useState(item.careNotes || '');
+  const [showDetails, setShowDetails] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setSelectedColors(item.colors || []);
+    setSelectedFabrics(item.fabrics || []);
+    setSelectedSilhouettes(
+      item.silhouettes && item.silhouettes.length > 0
+        ? item.silhouettes
+        : item.silhouette
+        ? [item.silhouette]
+        : []
+    );
+    setSelectedFormalities(item.formalities || []);
+    setSelectedStyleTags(item.styleTags || []);
+    setSelectedSeasons(item.seasons || []);
+    setSelectedOccasions(item.occasions || []);
+    setPattern(item.pattern || '');
+    setFit(item.fit || '');
+    setBrand(item.brand || '');
+    setCareNotes(item.careNotes || '');
+  }, [item]);
+
   
   const {
     isCameraOpen,
@@ -50,11 +91,30 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
 
   // Fetch categories on mount
   useEffect(() => {
-    apiGet('/api/categories')
-      .then(res => res.json())
-      .then(data => setCategories(data))
-      .catch(err => console.error('Error fetching categories:', err));
+    Promise.all([apiGet('/api/categories'), apiGet('/api/subcategories')])
+      .then(async ([categoriesRes, subcategoriesRes]) => {
+        const [categoriesData, subcategoriesData] = await Promise.all([
+          categoriesRes.json(),
+          subcategoriesRes.json()
+        ]);
+        setCategories(categoriesData);
+        setSubcategories(subcategoriesData);
+      })
+      .catch(err => console.error('Error fetching categories or subcategories:', err));
   }, []);
+
+  useEffect(() => {
+    if (!category || subCategory) {
+      return;
+    }
+    const options = subcategories[category];
+    if (options && options.length > 0) {
+      const defaultOption = options.find(option => option.toLowerCase() !== 'other');
+      if (defaultOption) {
+        setSubCategory(defaultOption);
+      }
+    }
+  }, [category, subCategory, subcategories]);
 
   // Set initial preview to existing image only if it exists
   // But don't show preview until image successfully loads (to avoid showing placeholders)
@@ -154,8 +214,26 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
       }
       formData.append('title', title);
       formData.append('category', category);
+      if (subCategory) {
+        formData.append('subCategory', subCategory);
+      }
       if (description.trim()) {
         formData.append('description', description);
+      }
+      formData.append('colors', JSON.stringify(selectedColors));
+      formData.append('fabrics', JSON.stringify(selectedFabrics));
+      formData.append('formalities', JSON.stringify(selectedFormalities));
+      formData.append('styleTags', JSON.stringify(selectedStyleTags));
+      formData.append('seasons', JSON.stringify(selectedSeasons));
+      formData.append('occasions', JSON.stringify(selectedOccasions));
+      formData.append('pattern', pattern);
+    formData.append('silhouettes', JSON.stringify(selectedSilhouettes));
+      formData.append('fit', fit);
+      if (showDetails || brand) {
+        formData.append('brand', brand);
+      }
+      if (showDetails || careNotes || item.careNotes) {
+        formData.append('careNotes', careNotes);
       }
       if (Object.keys(measurements).length > 0) {
         formData.append('measurements', JSON.stringify(measurements));
@@ -207,11 +285,18 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
             id="category"
             value={category}
             onChange={(e) => {
-              setCategory(e.target.value);
+              const nextCategory = e.target.value;
+              if (nextCategory === category) {
+                return;
+              }
+              setCategory(nextCategory);
               // Reset measurements when category changes
-              if (e.target.value !== item.category) {
+              if (nextCategory !== item.category) {
                 setMeasurements({});
               }
+              const options = subcategories[nextCategory] || [];
+              const defaultOption = options.find(option => option.toLowerCase() !== 'other');
+              setSubCategory(defaultOption || '');
             }}
             disabled={loading}
             required
@@ -222,6 +307,54 @@ const ItemEdit: React.FC<ItemEditProps> = ({ item, onItemUpdated, onCancel, apiU
             ))}
           </select>
         </div>
+
+        {category && (
+          <div className="form-group">
+            <label htmlFor="subCategory">Sub-category</label>
+            <select
+              id="subCategory"
+              value={subCategory}
+              onChange={(e) => setSubCategory(e.target.value)}
+              disabled={loading}
+            >
+              <option value="">Select a sub-category</option>
+              {(subcategories[category] || ['Other']).map(option => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <WardrobeAttributeFields
+          category={category}
+          subCategory={subCategory}
+          showDetails={showDetails}
+          onToggleDetails={() => setShowDetails(prev => !prev)}
+          selectedColors={selectedColors}
+          onColorsChange={setSelectedColors}
+          selectedFabrics={selectedFabrics}
+          onFabricsChange={setSelectedFabrics}
+          selectedSilhouettes={selectedSilhouettes}
+          onSilhouettesChange={setSelectedSilhouettes}
+          selectedFormalities={selectedFormalities}
+          onFormalitiesChange={setSelectedFormalities}
+          selectedStyleTags={selectedStyleTags}
+          onStyleTagsChange={setSelectedStyleTags}
+          selectedSeasons={selectedSeasons}
+          onSeasonsChange={setSelectedSeasons}
+          selectedOccasions={selectedOccasions}
+          onOccasionsChange={setSelectedOccasions}
+          pattern={pattern}
+          onPatternChange={setPattern}
+          fit={fit}
+          onFitChange={setFit}
+          brand={brand}
+          onBrandChange={setBrand}
+          careNotes={careNotes}
+          onCareNotesChange={setCareNotes}
+        />
 
         <div className="form-group">
           <label htmlFor="description">Description</label>

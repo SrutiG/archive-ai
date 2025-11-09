@@ -589,7 +589,7 @@ try {
   ensureDataDir();
 
   // Find or create the target user in database
-  let targetUser = db.getAllUsers().find(u => u.name === TARGET_USER_NAME);
+  let targetUser = (await db.getAllUsers()).find((u: { name: string; }) => u.name === TARGET_USER_NAME);
   
   if (!targetUser) {
     // Create new user
@@ -601,7 +601,7 @@ try {
     console.log(`   Found existing user: ${targetUser.name} (${targetUser.id})`);
     
     // Clear existing items for this user (optional - comment out if you want to preserve)
-    const existingItems = db.getItemsByUser(targetUser.id);
+    const existingItems = await db.getItemsByUser(targetUser.id);
     if (existingItems.length > 0) {
       console.log(`   Clearing ${existingItems.length} existing items for user...`);
       for (const item of existingItems) {
@@ -610,8 +610,8 @@ try {
     }
     
     // Clear saved outfits and feedback (optional - comment out if you want to preserve)
-    const savedOutfits = db.getSavedOutfits(targetUser.id);
-    const feedback = db.getFeedback(targetUser.id);
+    const savedOutfits = await db.getSavedOutfits(targetUser.id);
+    const feedback = await db.getFeedback(targetUser.id);
     if (savedOutfits.length > 0 || feedback.length > 0) {
       console.log(`   Clearing ${savedOutfits.length} saved outfits and ${feedback.length} feedback entries...`);
       for (const outfit of savedOutfits) {

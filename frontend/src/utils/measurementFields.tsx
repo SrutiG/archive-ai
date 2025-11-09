@@ -142,7 +142,7 @@ export const getMeasurementFields = ({
   }
 
   // Additional categories that might benefit from measurements
-  if (['Activewear', 'Underwear'].includes(category)) {
+  if (['Activewear', 'Underwear', 'Underwear & Sleepwear'].includes(category)) {
     // These can use the generic size field already included above
     // Could add specific measurements if needed in the future
   }

@@ -307,7 +307,7 @@
 
 .outfit-category-row-items {
   display: flex;
-  gap: 1rem;
+  gap: 0.25rem;
   flex: 1;
   overflow: visible;
 }
