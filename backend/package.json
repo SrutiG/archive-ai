@@ -13,7 +13,8 @@
     "migrate-supabase": "ts-node src/scripts/migrateToSupabase.ts",
     "migrate-postgres": "ts-node src/scripts/migrateToPostgres.ts",
     "verify-supabase": "ts-node verify-supabase-setup.ts",
-    "delete-test-users": "ts-node src/scripts/deleteTestUsers.ts"
+    "delete-test-users": "ts-node src/scripts/deleteTestUsers.ts",
+    "reset-outfit-clicks": "ts-node src/scripts/resetOutfitClicks.ts"
   },
   "keywords": [],
   "author": "",

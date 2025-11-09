@@ -1085,7 +1085,8 @@ app.post('/api/outfits/generate', async (req, res) => {
       combinedPrompt,
       userData.outfitFeedback || [],
       selectedItems,
-      userData.savedOutfits || []
+      userData.savedOutfits || [],
+      userId
     );
     console.log(`Generated ${outfits.length} outfit combinations`);
     

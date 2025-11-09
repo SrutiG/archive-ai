@@ -132,6 +132,26 @@ const ANCHOR_SINGLETON_CATEGORIES = new Set([
   'Shoes',
 ]);
 
+function getAnchorUsageKey(item: WardrobeItem): string | undefined {
+  if (item.id && typeof item.id === 'string' && item.id.trim().length > 0) {
+    return item.id;
+  }
+  if (item.title && typeof item.title === 'string') {
+    return item.title.trim().toLowerCase();
+  }
+  return undefined;
+}
+
+const RECENT_ANCHOR_HISTORY_SIZE = 20;
+const RECENT_ANCHOR_WEIGHT = 3;
+const anchorSelectionHistory = new Map<
+  string,
+  {
+    counts: Map<string, number>;
+    queue: string[];
+  }
+>();
+
 function createSeededRandom(seed: number): () => number {
   let value = seed % 2147483647;
   if (value <= 0) {
@@ -176,15 +196,6 @@ function selectAnchorItems(
   const usedItemIds = new Set<string>();
   const usedTitles = new Set<string>();
   const anchors: Array<{ category: string; anchorItem: WardrobeItem }> = [];
-  const getUsageKey = (item: WardrobeItem): string | undefined => {
-    if (item.id && typeof item.id === 'string' && item.id.trim().length > 0) {
-      return item.id;
-    }
-    if (item.title && typeof item.title === 'string') {
-      return item.title.trim().toLowerCase();
-    }
-    return undefined;
-  };
 
   for (let i = 0; i < outfitCount; i++) {
     const category = (() => {
@@ -204,7 +215,7 @@ function selectAnchorItems(
     }
 
     const unusedItems = pool.filter(item => {
-      const key = getUsageKey(item);
+      const key = getAnchorUsageKey(item);
       if (key) {
         return !usedItemIds.has(key);
       }
@@ -216,7 +227,7 @@ function selectAnchorItems(
     });
     const selectionPool = unusedItems.length > 0 ? unusedItems : pool;
     const weightedPool = selectionPool.map(item => {
-      const usageKey = getUsageKey(item);
+      const usageKey = getAnchorUsageKey(item);
       const usage = usageKey ? usageCounts?.get(usageKey) ?? 0 : 0;
       const weight = usage >= 0 ? 1 / (1 + usage) : 1;
       return { item, weight: Number.isFinite(weight) && weight > 0 ? weight : 1 };
@@ -240,7 +251,7 @@ function selectAnchorItems(
       continue;
     }
 
-    const usageKey = getUsageKey(anchorItem);
+    const usageKey = getAnchorUsageKey(anchorItem);
     if (usageKey) {
       usedItemIds.add(usageKey);
       usedTitles.add(usageKey);
@@ -958,11 +969,12 @@ export async function generateOutfits(
   prompt?: string,
   feedback?: OutfitFeedback[],
   selectedItems?: WardrobeItem[],
-  savedOutfits?: SavedOutfit[]
+  savedOutfits?: SavedOutfit[],
+  userId?: string
 ): Promise<GeneratedOutfit[]> {
   const parsedOutfitCount = Number.parseInt(process.env.OUTFIT_COUNT ?? '', 10);
   const targetOutfitCount = Number.isFinite(parsedOutfitCount) && parsedOutfitCount > 0 ? parsedOutfitCount : 5;
-  const generationCount = Math.max(targetOutfitCount, Math.ceil(targetOutfitCount * 1.5));
+  const generationCount = Math.max(targetOutfitCount * 2, targetOutfitCount + 2);
   const selectedList = selectedItems ?? [];
   const savedOutfitList = savedOutfits ?? [];
   const normalizeTitleKey = (value: string): string =>
@@ -999,14 +1011,15 @@ export async function generateOutfits(
     .filter(set => set.size > 0);
 
   const anchorUsageCounts = new Map<string, number>();
-  savedOutfitList.forEach(outfit => {
-    (outfit.itemIds || []).forEach(id => {
-      if (!id) {
-        return;
-      }
-      anchorUsageCounts.set(id, (anchorUsageCounts.get(id) || 0) + 1);
-    });
-  });
+  if (userId) {
+    const history = anchorSelectionHistory.get(userId);
+    if (history) {
+      history.counts.forEach((count, key) => {
+        const existing = anchorUsageCounts.get(key) || 0;
+        anchorUsageCounts.set(key, existing + count * RECENT_ANCHOR_WEIGHT);
+      });
+    }
+  }
 
   const hasAccessories = itemsByCoreCategory.accessories.length > 0;
   const coreCategoriesRequired: CoreCategory[] = hasAccessories
@@ -1095,6 +1108,38 @@ ${anchorPlan
   )
   .join('\n')}
 Do NOT mention to the user that any item was pre-selected as an anchor or that an outfit was intentionally centered around it. Present each outfit naturally.`;
+    }
+  }
+
+  if (userId && anchorPlan.length > 0) {
+    let history = anchorSelectionHistory.get(userId);
+    if (!history) {
+      history = { counts: new Map<string, number>(), queue: [] };
+      anchorSelectionHistory.set(userId, history);
+    }
+    const { counts, queue } = history;
+    anchorPlan.forEach(({ anchorItem }) => {
+      const key = getAnchorUsageKey(anchorItem);
+      if (!key) {
+        return;
+      }
+      queue.push(key);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    while (queue.length > RECENT_ANCHOR_HISTORY_SIZE) {
+      const removed = queue.shift();
+      if (!removed) {
+        continue;
+      }
+      const current = counts.get(removed);
+      if (current === undefined) {
+        continue;
+      }
+      if (current <= 1) {
+        counts.delete(removed);
+      } else {
+        counts.set(removed, current - 1);
+      }
     }
   }
 
@@ -1289,7 +1334,13 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
       messages: [
         {
           role: 'system',
-          content: `You are a fashion stylist. Generate ${generationCount} outfit combinations using the available wardrobe items. 
+          content: `You are a fashion stylist.${selectedList.length === 0 && anchorPlan.length > 0 ? ` These anchor pieces MUST appear in their respective outfits:
+          ${anchorPlan.map((anchor, index) => {
+            const anchorCategory = anchor.anchorItem.category || anchor.category;
+            return `Outfit ${index + 1}: "${anchor.anchorItem.title}" (${anchorCategory}) is the hero and must be included verbatim.`;
+          }).join(' ')}` : ''}
+
+          Generate ${generationCount} outfit combinations using the available wardrobe items. 
           Each outfit can include up to 10 pieces. You can include multiple items from the same category (e.g., multiple jewelry pieces, multiple jacket layers). 
           Pay close attention to the user's style preferences and personal aesthetic when creating combinations.
           
@@ -1326,7 +1377,7 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
         },
         {
           role: 'user',
-          content: `${userContext}${selectedItemsContext}${anchorContext}${promptContext}${feedbackContext}${coreCategoryInstruction}\n\nGenerate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nVARIETY REQUIREMENT: Create VARIETY across the ${generationCount} outfits. Do NOT use the same item in every outfit unless:
+          content: `${userContext}${selectedItemsContext}${anchorContext}${promptContext}${feedbackContext}${coreCategoryInstruction}${selectedList.length === 0 && anchorPlan.length > 0 ? `\n\nRemember: Outfit numbers ${anchorPlan.map((_, index) => index + 1).join(', ')} must include their anchor piece exactly as listed above.` : ''}\n\nGenerate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nVARIETY REQUIREMENT: Create VARIETY across the ${generationCount} outfits. Do NOT use the same item in every outfit unless:
 1. The user explicitly selected that item (then it MUST appear in all outfits)
 2. It's the only item available in that category (then it's acceptable to repeat)
 
@@ -1334,7 +1385,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
         }
       ],
       max_tokens: 2000,
-      temperature: 0.7,
+      temperature: 0.45,
       response_format: { type: 'json_object' }
     });
     const duration = Date.now() - startTime;
@@ -1687,16 +1738,30 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
 
       const outfitsWithScores = outfits.map((outfit, index) => {
         const idSet = new Set<string>();
+        let shoeCount = 0;
+        let bottomCount = 0;
         outfit.items.forEach(title => {
           const item = allItemsMap.get(normalizeTitleKey(title));
           if (item?.id) {
             idSet.add(item.id);
           }
+          if (item) {
+            const flags = getCoreCategoryFlags(item, item.title);
+            if (flags.includes('shoes')) {
+              shoeCount += 1;
+            }
+            if (flags.includes('bottoms')) {
+              bottomCount += 1;
+            }
+          }
         });
         const similarity = computeSimilarityScore(idSet);
+        const duplicatePenalty =
+          (shoeCount > 1 ? 1 : 0) +
+          (bottomCount > 1 ? 1 : 0);
         return {
           outfit,
-          similarity,
+          similarity: similarity + duplicatePenalty,
           index,
         };
       });
