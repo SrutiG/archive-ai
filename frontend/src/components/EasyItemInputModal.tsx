@@ -13,6 +13,7 @@ interface GeneratedItem {
   id: string;
   title: string;
   category: string;
+  subCategory?: string;
   description?: string;
   createdAt: string;
 }

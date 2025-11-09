@@ -143,6 +143,7 @@ export interface WardrobeItem {
   imageUrl: string;
   category: string;
   subCategory?: string;
+  brand?: string;
   description?: string;
   silhouettes?: WardrobeSilhouetteOption[];
   colors?: WardrobeColorOption[];
