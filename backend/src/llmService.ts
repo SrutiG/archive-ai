@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 import {
   WardrobeItem,
@@ -8,6 +9,7 @@ import {
   WardrobeOccasionOption,
   WardrobeSeasonOption,
   WardrobeStyleTagOption,
+  SavedOutfit,
 } from './index';
 import { resolveSubCategory } from './wardrobeSubcategories';
 
@@ -124,6 +126,135 @@ const WEATHER_KEYWORD_RULES: Array<{ keywords: string[]; seasons: WardrobeSeason
   { keywords: ['heatwave', 'heat wave'], seasons: ['summer'], note: 'heat wave' },
   { keywords: ['cool', 'chilly', 'crisp', 'breezy'], seasons: ['fall', 'spring'], note: 'cool temperatures' },
 ];
+
+const ANCHOR_SINGLETON_CATEGORIES = new Set([
+  'Bags',
+  'Shoes',
+]);
+
+function createSeededRandom(seed: number): () => number {
+  let value = seed % 2147483647;
+  if (value <= 0) {
+    value += 2147483646;
+  }
+  return () => {
+    value = (value * 16807) % 2147483647;
+    return (value - 1) / 2147483646;
+  };
+}
+
+const LOWER_WEIGHTED_RANDOM_CATEGORIES = new Set([
+  'Underwear & Sleepwear',
+  'Swimwear',
+  'Activewear',
+]);
+
+function selectAnchorItems(
+  itemsByCategory: Record<string, WardrobeItem[]>,
+  outfitCount: number,
+  seed: number,
+  usageCounts?: Map<string, number>
+): Array<{ category: string; anchorItem: WardrobeItem }> {
+  const entries = Object.entries(itemsByCategory).filter(([, items]) => Array.isArray(items) && items.length > 0);
+  if (entries.length === 0 || outfitCount <= 0) {
+    return [];
+  }
+
+  const weightedCategories: string[] = [];
+  entries.forEach(([category]) => {
+    const baseWeight = LOWER_WEIGHTED_RANDOM_CATEGORIES.has(category) ? 1 : 3;
+    for (let i = 0; i < baseWeight; i++) {
+      weightedCategories.push(category);
+    }
+  });
+
+  if (weightedCategories.length === 0) {
+    return [];
+  }
+
+  const rng = createSeededRandom(seed);
+  const usedItemIds = new Set<string>();
+  const usedTitles = new Set<string>();
+  const anchors: Array<{ category: string; anchorItem: WardrobeItem }> = [];
+  const getUsageKey = (item: WardrobeItem): string | undefined => {
+    if (item.id && typeof item.id === 'string' && item.id.trim().length > 0) {
+      return item.id;
+    }
+    if (item.title && typeof item.title === 'string') {
+      return item.title.trim().toLowerCase();
+    }
+    return undefined;
+  };
+
+  for (let i = 0; i < outfitCount; i++) {
+    const category = (() => {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const candidateCategory = weightedCategories[Math.floor(rng() * weightedCategories.length)];
+        const pool = itemsByCategory[candidateCategory] || [];
+        if (pool.length > 0) {
+          return candidateCategory;
+        }
+      }
+      return entries[Math.floor(rng() * entries.length)][0];
+    })();
+
+    const pool = itemsByCategory[category] || [];
+    if (pool.length === 0) {
+      continue;
+    }
+
+    const unusedItems = pool.filter(item => {
+      const key = getUsageKey(item);
+      if (key) {
+        return !usedItemIds.has(key);
+      }
+      if (item.title) {
+        const normalized = item.title.trim().toLowerCase();
+        return !usedTitles.has(normalized);
+      }
+      return true;
+    });
+    const selectionPool = unusedItems.length > 0 ? unusedItems : pool;
+    const weightedPool = selectionPool.map(item => {
+      const usageKey = getUsageKey(item);
+      const usage = usageKey ? usageCounts?.get(usageKey) ?? 0 : 0;
+      const weight = usage >= 0 ? 1 / (1 + usage) : 1;
+      return { item, weight: Number.isFinite(weight) && weight > 0 ? weight : 1 };
+    });
+
+    const totalWeight = weightedPool.reduce((sum, entry) => sum + entry.weight, 0);
+    if (totalWeight <= 0) {
+      continue;
+    }
+    let roll = rng() * totalWeight;
+    let anchorItem = weightedPool[weightedPool.length - 1]?.item;
+    for (const entry of weightedPool) {
+      roll -= entry.weight;
+      if (roll <= 0) {
+        anchorItem = entry.item;
+        break;
+      }
+    }
+
+    if (!anchorItem) {
+      continue;
+    }
+
+    const usageKey = getUsageKey(anchorItem);
+    if (usageKey) {
+      usedItemIds.add(usageKey);
+      usedTitles.add(usageKey);
+    } else if (anchorItem.title) {
+      usedTitles.add(anchorItem.title.trim().toLowerCase());
+    }
+    if (usageCounts && usageKey) {
+      usageCounts.set(usageKey, (usageCounts.get(usageKey) || 0) + 1);
+    }
+    anchors.push({ category, anchorItem });
+  }
+
+  return anchors;
+}
 
 export interface ExtractedContextFilters {
   formalities: Set<WardrobeFormalityOption>;
@@ -826,9 +957,14 @@ export async function generateOutfits(
   userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[]; hairColor?: string; hairTexture?: string; skinColor?: string },
   prompt?: string,
   feedback?: OutfitFeedback[],
-  selectedItems?: WardrobeItem[]
+  selectedItems?: WardrobeItem[],
+  savedOutfits?: SavedOutfit[]
 ): Promise<GeneratedOutfit[]> {
+  const parsedOutfitCount = Number.parseInt(process.env.OUTFIT_COUNT ?? '', 10);
+  const targetOutfitCount = Number.isFinite(parsedOutfitCount) && parsedOutfitCount > 0 ? parsedOutfitCount : 5;
+  const generationCount = Math.max(targetOutfitCount, Math.ceil(targetOutfitCount * 1.5));
   const selectedList = selectedItems ?? [];
+  const savedOutfitList = savedOutfits ?? [];
   const normalizeTitleKey = (value: string): string =>
     normalizeWhitespace(stripLeadingMarkers(value || '')).toLowerCase();
 
@@ -852,6 +988,23 @@ export async function generateOutfits(
       if (!itemsByCoreCategory[category].some(existing => normalizeTitleKey(existing.title) === key)) {
         itemsByCoreCategory[category].push(item);
       }
+    });
+  });
+
+  const savedOutfitIdSets: Array<Set<string>> = savedOutfitList
+    .map(outfit => {
+      const ids = (outfit.itemIds || []).filter((id): id is string => typeof id === 'string' && id.length > 0);
+      return new Set(ids);
+    })
+    .filter(set => set.size > 0);
+
+  const anchorUsageCounts = new Map<string, number>();
+  savedOutfitList.forEach(outfit => {
+    (outfit.itemIds || []).forEach(id => {
+      if (!id) {
+        return;
+      }
+      anchorUsageCounts.set(id, (anchorUsageCounts.get(id) || 0) + 1);
     });
   });
 
@@ -895,6 +1048,56 @@ export async function generateOutfits(
 Layering multiple tops or outerwear is encouraged, but you must still include a bottom (or a garment that covers both) and shoes in every outfit.`;
 
 
+  const anchorPlan: Array<{ category: string; anchorItem: WardrobeItem }> = [];
+  let anchorContext = '';
+
+  if (selectedList.length === 0) {
+    const now = Date.now();
+    let seed = Number(now % 2147483647);
+    if (typeof process !== 'undefined' && typeof process.hrtime === 'function') {
+      try {
+        const hr = process.hrtime.bigint();
+        seed = (seed + Number(hr % 2147483647n)) % 2147483647;
+      } catch (err) {
+        // ignore
+      }
+    }
+    try {
+      seed = (seed + crypto.randomInt(1, 2147483646)) % 2147483647;
+    } catch (err) {
+      seed = (seed + Math.floor(Math.random() * 2147483646)) % 2147483647;
+    }
+    if (seed <= 0) {
+      seed = Math.floor(Math.random() * 2147483646) + 1;
+    }
+
+    anchorPlan.push(...selectAnchorItems(itemsByCategory, generationCount, seed, anchorUsageCounts));
+    if (anchorPlan.length > 0) {
+      const anchorSummary = anchorPlan
+        .map((anchor, index) => {
+          const label = anchor.anchorItem.category || anchor.category;
+          return `Outfit ${index + 1}: "${anchor.anchorItem.title}" (${label})`;
+        })
+        .join('; ');
+      console.log(`[LLM] Anchor plan selected: ${anchorSummary}`);
+      anchorContext = `ANCHOR REQUIREMENTS:
+${anchorPlan
+  .map(
+    (anchor, index) =>
+      {
+        const anchorCategory = anchor.anchorItem.category || anchor.category;
+        const heroSummary = `- Outfit ${index + 1}: "${anchor.anchorItem.title}" (${anchorCategory}) is the hero piece. Build the full look to showcase this item — reference its colors, textures, proportions, and styling details.`;
+        const duplicateRule = ANCHOR_SINGLETON_CATEGORIES.has(anchorCategory || '')
+          ? ' Do not include additional items from this same category (e.g., no second bag or second pair of shoes) unless the user explicitly selected them.'
+          : ' You may include additional pieces from this category only when the layering is intentional (e.g., skirt over pants, trench over blazer, stacked jewelry, multiple hair accessories) and clearly supports the hero without feeling redundant. Bags are always limited to one.';
+        return `${heroSummary}${duplicateRule} Highlight the anchor through supporting pieces, styling notes, and the justification copy, without explicitly mentioning that it was pre-selected.`;
+      }
+  )
+  .join('\n')}
+Do NOT mention to the user that any item was pre-selected as an anchor or that an outfit was intentionally centered around it. Present each outfit naturally.`;
+    }
+  }
+
   const fallbackRunner = () =>
     generateFallbackOutfits(
       itemsByCoreCategory,
@@ -904,7 +1107,9 @@ Layering multiple tops or outerwear is encouraged, but you must still include a 
         normalizeTitleKey,
         shouldAvoidTitle,
         selectedItems: selectedList,
-      }
+        anchorItems: anchorPlan.map(plan => plan.anchorItem),
+      },
+      generationCount
     );
 
   if (!openai) {
@@ -1019,7 +1224,7 @@ Layering multiple tops or outerwear is encouraged, but you must still include a 
         console.log(`[LLM] Detected lower-body-covering item in selected items - excluding pants/shorts/skirts`);
       }
       
-      selectedItemsContext = `CRITICAL REQUIREMENT: The user has selected these specific items that MUST be included in EVERY single generated outfit: ${selectedItemTitles}. \n\nEach of the 5 generated outfits MUST include ALL of these selected items. Do not generate any outfit without these items. Here are the selected items with full details:\n${selectedItemsDesc}\n\nGenerate 5 different outfit combinations, each one MUST include all the selected items listed above. Create variety by pairing them with different complementary pieces from the wardrobe.${exclusionRules}`;
+      selectedItemsContext = `CRITICAL REQUIREMENT: The user has selected these specific items that MUST be included in EVERY single generated outfit: ${selectedItemTitles}. \n\nEach of the ${generationCount} generated outfits MUST include ALL of these selected items. Do not generate any outfit without these items. Here are the selected items with full details:\n${selectedItemsDesc}\n\nGenerate ${generationCount} different outfit combinations, each one MUST include all the selected items listed above. Create variety by pairing them with different complementary pieces from the wardrobe.${exclusionRules}`;
       console.log(`[LLM] Selected items context: ${selectedItems.length} items`);
     }
 
@@ -1076,7 +1281,7 @@ Layering multiple tops or outerwear is encouraged, but you must still include a 
 
     // Build a list of all exact item titles for reference
     const allExactTitles = Object.values(itemsByCategory).flat().map(item => item.title).join(', ');
-    
+
     console.log('[LLM] Calling OpenAI API for outfit generation...');
     const startTime = Date.now();
     const response = await openai.chat.completions.create({
@@ -1084,7 +1289,7 @@ Layering multiple tops or outerwear is encouraged, but you must still include a 
       messages: [
         {
           role: 'system',
-          content: `You are a fashion stylist. Generate 5-7 outfit combinations using the available wardrobe items. 
+          content: `You are a fashion stylist. Generate ${generationCount} outfit combinations using the available wardrobe items. 
           Each outfit can include up to 10 pieces. You can include multiple items from the same category (e.g., multiple jewelry pieces, multiple jacket layers). 
           Pay close attention to the user's style preferences and personal aesthetic when creating combinations.
           
@@ -1092,10 +1297,15 @@ Layering multiple tops or outerwear is encouraged, but you must still include a 
           For example, if the wardrobe has "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" - NOT "Black Blazer" or "Rick Owens Blazer".
           The item titles in your "items" array must match EXACTLY (case-sensitive) with the titles provided in the wardrobe.
           
-          VARIETY REQUIREMENT: Create VARIETY across the 5 outfits. Do NOT use the same item in all 5 outfits unless:
+          VARIETY REQUIREMENT: Create VARIETY across the ${generationCount} outfits. Do NOT use the same item in every outfit unless:
           1. The user explicitly selected that item (then it MUST appear in all outfits)
           2. It's the only item available in that category (then it's acceptable to repeat)
           Otherwise, vary the items across outfits - use different tops, different bottoms, different shoes, etc. to create diverse outfit combinations.
+          
+          DUPLICATE CONTROL:
+          - Limit outfits to a single bag and a single pair of shoes unless the user explicitly selected duplicates.
+          - Layering bottoms (e.g., skirt over pants) or outerwear is allowed only when the styling is intentional—describe why the layering matters.
+          - Multiple accessories are acceptable when they serve distinct purposes (e.g., hair clip plus earrings), but avoid redundant pieces that feel duplicative without justification.
           
           ${coreCategoryInstruction}
           
@@ -1116,11 +1326,11 @@ Layering multiple tops or outerwear is encouraged, but you must still include a 
         },
         {
           role: 'user',
-          content: `${userContext}${selectedItemsContext}${promptContext}${feedbackContext}${coreCategoryInstruction}\n\nGenerate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nVARIETY REQUIREMENT: Create VARIETY across the 5 outfits. Do NOT use the same item in all 5 outfits unless:
+          content: `${userContext}${selectedItemsContext}${anchorContext}${promptContext}${feedbackContext}${coreCategoryInstruction}\n\nGenerate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nVARIETY REQUIREMENT: Create VARIETY across the ${generationCount} outfits. Do NOT use the same item in every outfit unless:
 1. The user explicitly selected that item (then it MUST appear in all outfits)
 2. It's the only item available in that category (then it's acceptable to repeat)
 
-Otherwise, vary the items across outfits - use different tops, different bottoms, different shoes, different outerwear, etc. Each outfit should feel unique and different from the others. Only repeat items if they were explicitly selected by the user or if there's only one option in that category.\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the 5 generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''}${exclusionRules} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly 5 outfit combinations. Remember: Use EXACT item titles from the list above - no modifications, abbreviations, or variations. Create VARIETY - do not repeat the same items across all outfits unless they were selected or are the only option.`
+Otherwise, vary the items across outfits - use different tops, different bottoms, different shoes, different outerwear, etc. Each outfit should feel unique and different from the others. Only repeat items if they were explicitly selected by the user or if there's only one option in that category.\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the ${generationCount} generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''}${exclusionRules} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} ${anchorPlan.length > 0 ? 'For internal guidance only: keep the array order aligned with the anchor items listed above (Outfit 1 aligns with the first anchor, Outfit 2 with the second, etc.), include each anchor item, and highlight it as the hero piece without revealing that it was pre-selected.' : ''}Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly ${generationCount} outfit combinations. Remember: Use EXACT item titles from the list above - no modifications, abbreviations, or variations. Create VARIETY - do not repeat the same items across all outfits unless they were selected or are the only option.`
         }
       ],
       max_tokens: 2000,
@@ -1241,6 +1451,25 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
         items: canonicalTitles,
       };
     });
+
+    if (anchorPlan.length > 0) {
+      outfits = outfits.map((outfit, index) => {
+        const anchor = anchorPlan[index];
+        if (!anchor) {
+          return outfit;
+        }
+        const hasAnchor = outfit.items.includes(anchor.anchorItem.title);
+        if (hasAnchor) {
+          return outfit;
+        }
+        console.log(`[LLM] Injecting missing anchor item "${anchor.anchorItem.title}" into outfit ${index + 1}`);
+        const deduped = [anchor.anchorItem.title, ...outfit.items.filter(item => item !== anchor.anchorItem.title)].slice(0, 10);
+        return {
+          ...outfit,
+          items: deduped,
+        };
+      });
+    }
 
     if (selectedList.length > 0) {
       const lowerBodyCoveringKeywords = ['overall', 'jumpsuit', 'romper', 'onesie', 'dress', 'dresses'];
@@ -1388,11 +1617,11 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
 
     outfits = processedOutfits;
 
-    if (outfits.length < 5) {
+    if (outfits.length < targetOutfitCount) {
       console.warn(`[LLM] Only ${outfits.length} valid outfits after enforcement. Supplementing with fallback outfits.`);
       const fallbackOutfits = fallbackRunner();
       for (const fallbackOutfit of fallbackOutfits) {
-        if (outfits.length >= 5) {
+        if (outfits.length >= targetOutfitCount) {
           break;
         }
         const result = enrichOutfitWithCoreCategories(fallbackOutfit);
@@ -1422,11 +1651,86 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
           });
         });
         return coreCategoriesRequired.every(category => counts[category] > 0);
-      })
-      .slice(0, 5);
-
+      });
+    
     if (beforeFilter !== outfits.length) {
       console.log(`[LLM] Filtered outfits: ${beforeFilter} -> ${outfits.length}`);
+    }
+
+    if (outfits.length > targetOutfitCount) {
+      const computeSimilarityScore = (generatedIds: Set<string>): number => {
+        if (generatedIds.size === 0 || savedOutfitIdSets.length === 0) {
+          return 0;
+        }
+        let worstSimilarity = 0;
+        savedOutfitIdSets.forEach(savedSet => {
+          let intersection = 0;
+          generatedIds.forEach(id => {
+            if (savedSet.has(id)) {
+              intersection += 1;
+            }
+          });
+          if (intersection === 0) {
+            return;
+          }
+          const union = generatedIds.size + savedSet.size - intersection;
+          if (union === 0) {
+            return;
+          }
+          const similarity = intersection / union;
+          if (similarity > worstSimilarity) {
+            worstSimilarity = similarity;
+          }
+        });
+        return worstSimilarity;
+      };
+
+      const outfitsWithScores = outfits.map((outfit, index) => {
+        const idSet = new Set<string>();
+        outfit.items.forEach(title => {
+          const item = allItemsMap.get(normalizeTitleKey(title));
+          if (item?.id) {
+            idSet.add(item.id);
+          }
+        });
+        const similarity = computeSimilarityScore(idSet);
+        return {
+          outfit,
+          similarity,
+          index,
+        };
+      });
+
+      if (savedOutfitIdSets.length > 0) {
+        outfitsWithScores.forEach(entry => {
+          console.log(
+            `[Similarity] Outfit ${entry.index + 1} similarity score: ${entry.similarity.toFixed(3)}`
+          );
+        });
+      }
+
+      outfitsWithScores.sort((a, b) => {
+        if (a.similarity === b.similarity) {
+          return a.index - b.index;
+        }
+        return a.similarity - b.similarity;
+      });
+
+      const pruned = outfitsWithScores
+        .slice(0, targetOutfitCount)
+        .map(entry => entry.outfit);
+
+      if (pruned.length < targetOutfitCount) {
+        console.warn(
+          `[Similarity] Only ${pruned.length} outfits remained after similarity pruning (requested ${targetOutfitCount}).`
+        );
+      } else if (outfitsWithScores.length !== pruned.length) {
+        console.log(
+          `[Similarity] Pruned outfits from ${outfitsWithScores.length} to ${pruned.length} for lowest similarity to saved outfits.`
+        );
+      }
+
+      outfits = pruned;
     }
 
     if (outfits.length === 0) {
@@ -1630,11 +1934,12 @@ function generateFallbackOutfits(
     normalizeTitleKey: (title: string) => string;
     shouldAvoidTitle: (title: string) => boolean;
     selectedItems: WardrobeItem[];
+    anchorItems?: WardrobeItem[];
   },
   maxOutfits = 5
 ): GeneratedOutfit[] {
   console.log('[LLM] Generating fallback outfits...');
-
+  
   const outfits: GeneratedOutfit[] = [];
   if (coreCategoriesRequired.some(category => (itemsByCoreCategory[category] || []).length === 0)) {
     console.log('[LLM] Not enough category coverage for fallback outfits');
@@ -1689,6 +1994,15 @@ function generateFallbackOutfits(
         usedNormalized.add(key);
       }
     });
+
+    const anchorItem = options.anchorItems?.[i];
+    if (anchorItem) {
+      const key = options.normalizeTitleKey(anchorItem.title);
+      if (!usedNormalized.has(key)) {
+        items.push(anchorItem.title);
+        usedNormalized.add(key);
+      }
+    }
 
     const counts: Record<CoreCategory, number> = { tops: 0, bottoms: 0, shoes: 0, accessories: 0 };
     items.forEach(title => {
@@ -1746,7 +2060,13 @@ function generateFallbackOutfits(
       stylingSuggestions: ['Mix and match layers, adjust proportions, and coordinate accessories for balance.'],
     });
   }
-
+  
   console.log(`[LLM] Generated ${outfits.length} fallback outfits`);
   return outfits;
 }
+
+export const __test__ = {
+  selectAnchorItems,
+  createSeededRandom,
+  generateFallbackOutfits,
+};

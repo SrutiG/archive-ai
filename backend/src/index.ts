@@ -1079,7 +1079,14 @@ app.post('/api/outfits/generate', async (req, res) => {
     if (userProfile.stylePreferences) {
       console.log(`Style preferences: ${userProfile.stylePreferences.substring(0, 100)}...`);
     }
-    const outfits = await generateOutfits(itemsByCategory, userProfile, combinedPrompt, userData.outfitFeedback || [], selectedItems);
+    const outfits = await generateOutfits(
+      itemsByCategory,
+      userProfile,
+      combinedPrompt,
+      userData.outfitFeedback || [],
+      selectedItems,
+      userData.savedOutfits || []
+    );
     console.log(`Generated ${outfits.length} outfit combinations`);
     
     const newClicks = userData.outfitGenerationClicks + 1;
