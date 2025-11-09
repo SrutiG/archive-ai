@@ -6,16 +6,280 @@ import { WardrobeItem } from './index';
 
 dotenv.config();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 const CATEGORIES = [
   'Tops', 'Bottoms', 'Dresses', 'Outerwear', 'Shoes', 
   'Accessories', 'Bags', 'Jewelry', 'Activewear', 'Underwear'
 ];
 
+const QUICK_ENTRY_MAX_TITLE_LENGTH = 60;
+
+const QUICK_ENTRY_FILLER_PATTERNS = [
+  /^i\s+(have|own|got)\s+/i,
+  /^there\s+(is|are)\s+/i,
+  /^these\s+/i,
+  /^here\s+/i,
+  /^my\s+/i,
+];
+
+const QUICK_ENTRY_ARTICLE_SPLIT_REGEX = /\band\s+(?=(?:a|an|the)\s)/gi;
+
+const QUICK_ENTRY_DIRECT_CATEGORY_MAP: Record<string, string> = {
+  dress: 'Dresses',
+  dresses: 'Dresses',
+};
+
+function normalizeCategory(rawCategory: string | undefined, fallbackText: string): string {
+  if (rawCategory) {
+    const trimmed = rawCategory.trim();
+    if (trimmed) {
+      const lower = trimmed.toLowerCase();
+      const exact = CATEGORIES.find(cat => cat.toLowerCase() === lower);
+      if (exact) return exact;
+      const partial = CATEGORIES.find(cat => cat.toLowerCase().includes(lower) || lower.includes(cat.toLowerCase()));
+      if (partial) return partial;
+    }
+  }
+
+  const lowerFallback = fallbackText.toLowerCase();
+  if (/\b(shoe|shoes|sneaker|sneakers|boot|boots|heel|heels|loafer|loafers|flat|flats|sandal|sandals|mule|mules)\b/.test(lowerFallback)) {
+    return 'Shoes';
+  }
+  if (/\b(pant|pants|trouser|trousers|jean|jeans|short|shorts|skirt|skirts|bottom|bottoms|legging|leggings|jogger|joggers)\b/.test(lowerFallback)) {
+    return 'Bottoms';
+  }
+  if (/\b(dress|gown)\b/.test(lowerFallback)) {
+    return 'Dresses';
+  }
+  if (/\b(coat|jacket|blazer|outerwear|cardigan|sweater|sweatshirt|hoodie|top|tops|shirt|tee|t-shirt|tank)\b/.test(lowerFallback)) {
+    return 'Tops';
+  }
+  if (/\b(bag|purse|belt|hat|scarf|glove|watch|ring|bracelet|necklace|jewelry|earring|earrings|cuff|pendant)\b/.test(lowerFallback)) {
+    return 'Accessories';
+  }
+  return 'Accessories';
+}
+
+function sanitizeDescription(description: string | undefined, fallbackText: string): string | undefined {
+  const value = (description || fallbackText || '').trim();
+  if (!value) return undefined;
+  return value.length > 200 ? `${value.slice(0, 197)}...` : value;
+}
+
+function dedupeItems(items: GeneratedWardrobeDraftItem[]): GeneratedWardrobeDraftItem[] {
+  const seen = new Set<string>();
+  return items.filter(item => {
+    const key = item.title.toLowerCase();
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+export interface GeneratedWardrobeDraftItem {
+  title: string;
+  category: string;
+  description?: string;
+}
+
+function stripLeadingMarkers(value: string): string {
+  return value.replace(/^[\s]*[-•*·+]+[\s]*/, '');
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function removeTrailingPunctuation(value: string): string {
+  return value.replace(/[,\.;:\-]+$/g, '').trim();
+}
+
+function enforceTitleLength(value: string): string {
+  if (value.length <= QUICK_ENTRY_MAX_TITLE_LENGTH) {
+    return value;
+  }
+  return `${value.slice(0, QUICK_ENTRY_MAX_TITLE_LENGTH - 3).trimEnd()}...`;
+}
+
+export function formatQuickEntryTitle(raw: string): string {
+  const cleaned = enforceTitleLength(
+    normalizeWhitespace(removeTrailingPunctuation(stripLeadingMarkers(raw || '')))
+  );
+  const titleCased = cleaned
+    .toLowerCase()
+    .split(' ')
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+  return titleCased;
+}
+
+function splitQuickEntrySegments(input: string): string[] {
+  const preprocessed = input
+    .replace(/\n+/g, ', ')
+    .replace(/\s+[-•–—]+\s+/g, ', ');
+
+  let segments = preprocessed
+    .split(/[,;]+/)
+    .map(segment => normalizeWhitespace(segment))
+    .filter(Boolean);
+
+  segments = segments.flatMap(segment => {
+    if (/^(?:a|an|the)\s/i.test(segment) && QUICK_ENTRY_ARTICLE_SPLIT_REGEX.test(segment)) {
+      return segment
+        .split(QUICK_ENTRY_ARTICLE_SPLIT_REGEX)
+        .map(part => normalizeWhitespace(part))
+        .filter(Boolean);
+    }
+    return segment;
+  });
+
+  segments = segments
+    .map(segment => {
+      let result = segment;
+      QUICK_ENTRY_FILLER_PATTERNS.forEach(pattern => {
+        if (pattern.test(result)) {
+          result = result.replace(pattern, '').trim();
+        }
+      });
+      return normalizeWhitespace(result);
+    })
+    .filter(segment => segment && segment.length > 1);
+
+  return segments;
+}
+
+function fallbackGenerateWardrobeItems(input: string): GeneratedWardrobeDraftItem[] {
+  console.log('[LLM] Using fallback parsing for quick entry items');
+  const segments = splitQuickEntrySegments(input);
+
+  if (segments.length === 0) {
+    const cleaned = normalizeWhitespace(removeTrailingPunctuation(stripLeadingMarkers(input)));
+    if (!cleaned) {
+      return [];
+    }
+    segments.push(cleaned);
+  }
+
+  const drafts: GeneratedWardrobeDraftItem[] = [];
+  for (const segment of segments) {
+    const title = formatQuickEntryTitle(segment);
+    if (!title) {
+      continue;
+    }
+
+    const directCategory = Object.entries(QUICK_ENTRY_DIRECT_CATEGORY_MAP).find(
+      ([keyword]) => title.toLowerCase().includes(keyword)
+    )?.[1];
+
+    const category = directCategory ?? normalizeCategory(undefined, segment);
+    const description = sanitizeDescription(
+      `Quick entry draft item described as: ${segment}`,
+      `Quick entry draft item described as: ${segment}`
+    );
+
+    drafts.push({
+      title,
+      category,
+      ...(description ? { description } : {})
+    });
+  }
+
+  return dedupeItems(drafts);
+}
+
+export async function generateWardrobeItemsFromText(input: string): Promise<GeneratedWardrobeDraftItem[]> {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (!OPENAI_API_KEY || !openai) {
+    return fallbackGenerateWardrobeItems(trimmed);
+  }
+
+  try {
+    console.log(`[LLM] Parsing quick entry wardrobe text (${trimmed.length} characters)`);
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a wardrobe assistant. The user will share a free-form stream of consciousness describing clothing or accessory items they own. Extract each distinct item and return a JSON object with a single key "items" that maps to an array. Each array element must include:
+- "title": human-friendly title in Title Case, ideally 3-8 words.
+- "category": one of the following exactly: ${CATEGORIES.join(', ')}.
+- "description": short sentence (max 160 characters) summarizing the item's color, fabric, fit, or style.
+Use only the listed categories. Respond with valid JSON only. If no items are found, return {"items": []}.`
+        },
+        {
+          role: 'user',
+          content: trimmed
+        }
+      ],
+      max_tokens: 600,
+      temperature: 0.3,
+      response_format: { type: 'json_object' }
+    });
+
+    const content = response.choices[0]?.message?.content?.trim();
+    if (!content) {
+      console.warn('[LLM] Empty response when parsing wardrobe items, using fallback');
+      return fallbackGenerateWardrobeItems(trimmed);
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(content);
+    } catch (parseError) {
+      console.error('[LLM] Failed to parse JSON response, using fallback', parseError);
+      return fallbackGenerateWardrobeItems(trimmed);
+    }
+
+    if (!parsed || !Array.isArray(parsed.items) || parsed.items.length === 0) {
+      console.warn('[LLM] Parsed response missing items, using fallback parser');
+      return fallbackGenerateWardrobeItems(trimmed);
+    }
+
+    const sanitized = parsed.items
+      .map((item: any) => {
+        const rawTitle = (item?.title || '').toString();
+        const title = formatQuickEntryTitle(rawTitle);
+        if (!title) {
+          return null;
+        }
+        const category = normalizeCategory((item?.category || '').toString(), title);
+        const description = sanitizeDescription(item?.description ? item.description.toString() : '', title);
+        return {
+          title,
+          category,
+          ...(description ? { description } : {})
+        } as GeneratedWardrobeDraftItem;
+      })
+      .filter((item: GeneratedWardrobeDraftItem | null): item is GeneratedWardrobeDraftItem => item !== null);
+
+    if (sanitized.length === 0) {
+      console.warn('[LLM] Sanitized response produced no items, using fallback parser');
+      return fallbackGenerateWardrobeItems(trimmed);
+    }
+
+    return dedupeItems(sanitized);
+  } catch (error) {
+    console.error('[LLM] Error parsing wardrobe items:', error);
+    if (error instanceof Error) {
+      console.error('[LLM] Error details:', error.message);
+    }
+    return fallbackGenerateWardrobeItems(trimmed);
+  }
+}
 export async function categorizeItem(title: string, imagePath: string): Promise<string> {
+  if (!openai) {
+    console.warn('[LLM] OpenAI API key missing, falling back to heuristic categorization');
+    return normalizeCategory(undefined, title);
+  }
   try {
     console.log(`[LLM] Starting categorization for: "${title}"`);
     console.log(`[LLM] Image path: ${imagePath}`);
@@ -127,6 +391,10 @@ export async function generateOutfits(
   feedback?: OutfitFeedback[],
   selectedItems?: WardrobeItem[]
 ): Promise<GeneratedOutfit[]> {
+  if (!openai) {
+    console.warn('[LLM] OpenAI API key missing, using fallback outfit generator');
+    return generateFallbackOutfits(itemsByCategory);
+  }
   try {
     console.log('[LLM] Starting outfit generation...');
     
@@ -498,6 +766,10 @@ export async function generateExploreSuggestions(
   userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[]; hairColor?: string; hairTexture?: string; skinColor?: string },
   feedback?: OutfitFeedback[]
 ): Promise<ExploreSuggestion[]> {
+  if (!openai) {
+    console.warn('[LLM] OpenAI API key missing, skipping explore suggestions generation');
+    return [];
+  }
   try {
     console.log('[LLM] Starting explore suggestions generation...');
     

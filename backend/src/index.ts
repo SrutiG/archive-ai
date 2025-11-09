@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
-import { generateOutfits, generateExploreSuggestions } from './llmService';
+import { generateOutfits, generateExploreSuggestions, generateWardrobeItemsFromText, formatQuickEntryTitle } from './llmService';
 import * as db from './database';
 import * as supabaseStorage from './supabaseStorage';
 
@@ -32,11 +32,16 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Logging middleware
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use('/uploads', express.static('uploads'));
+
+// Logging middleware (after body parsing)
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${req.method} ${req.path}`);
-  if (req.method === 'POST' || req.method === 'PUT') {
+  if ((req.method === 'POST' || req.method === 'PUT') && req.body && Object.keys(req.body).length > 0) {
     console.log(`  Body:`, req.body);
   }
   res.on('finish', () => {
@@ -45,10 +50,19 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use('/uploads', express.static('uploads'));
+const QUICK_ENTRY_CHAR_LIMIT = 800;
+
+const stripLeadingMarkers = (value: string): string =>
+  value.replace(/^[\s]*[-•*·+]+[\s]*/, '');
+
+const normalizeWhitespace = (value: string): string =>
+  value.replace(/\s+/g, ' ').trim();
+
+const sanitizeOutfitTitle = (title: string): string =>
+  normalizeWhitespace(stripLeadingMarkers(title || ''));
+
+const normalizeOutfitTitleKey = (title: string): string =>
+  sanitizeOutfitTitle(title).toLowerCase();
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../uploads');
@@ -427,6 +441,79 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
   }
 });
 
+app.post('/api/items/batch', async (req, res) => {
+  try {
+    const userId = getUserFromRequest(req);
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+
+    if (!text) {
+      return res.status(400).json({ error: 'Describe at least one item to add.' });
+    }
+
+    if (text.length > QUICK_ENTRY_CHAR_LIMIT) {
+      return res.status(400).json({ error: `Please keep quick entry submissions within ${QUICK_ENTRY_CHAR_LIMIT} characters.` });
+    }
+
+    console.log(`[QuickEntry] Parsing quick entry text (${text.length} characters) for user ${userId}`);
+
+    const parsedItems = await generateWardrobeItemsFromText(text);
+
+    if (!parsedItems || parsedItems.length === 0) {
+      return res.status(422).json({ error: 'We could not identify any wardrobe items. Try listing each item separately.' });
+    }
+
+    const existingItems = await db.getItemsByUser(userId);
+    const existingTitleKeys = new Set(existingItems.map((item: WardrobeItem) => normalizeOutfitTitleKey(item.title)));
+
+    const createdItems: WardrobeItem[] = [];
+    const skippedTitles: string[] = [];
+
+    for (const draft of parsedItems) {
+      const formattedTitle = formatQuickEntryTitle(draft.title);
+      if (!formattedTitle) {
+        skippedTitles.push(draft.title);
+        continue;
+      }
+
+      const normalizedKey = normalizeOutfitTitleKey(formattedTitle);
+
+      if (existingTitleKeys.has(normalizedKey) || createdItems.some(item => normalizeOutfitTitleKey(item.title) === normalizedKey)) {
+        skippedTitles.push(formattedTitle);
+        continue;
+      }
+
+      const newItem: WardrobeItem = {
+        id: uuidv4(),
+        title: formattedTitle,
+        category: draft.category,
+        description: draft.description,
+        createdAt: new Date().toISOString()
+      };
+
+      await db.insertItem(newItem, userId);
+      createdItems.push(newItem);
+      existingTitleKeys.add(normalizedKey);
+    }
+
+    if (createdItems.length === 0) {
+      return res.status(422).json({
+        error: 'All of those items already exist in your wardrobe.',
+        skippedTitles
+      });
+    }
+
+    console.log(`[QuickEntry] Created ${createdItems.length} items for user ${userId}. Skipped ${skippedTitles.length}.`);
+
+    res.status(201).json({
+      createdItems,
+      skippedTitles: skippedTitles.length > 0 ? skippedTitles : undefined
+    });
+  } catch (error) {
+    console.error('Error creating items from quick entry:', error);
+    res.status(500).json({ error: 'Failed to create wardrobe items from text.' });
+  }
+});
+
 // Generate outfit combinations
 app.post('/api/outfits/generate', async (req, res) => {
   try {
@@ -777,7 +864,24 @@ app.get('/api/outfits/saved', async (req, res) => {
     const userId = getUserFromRequest(req);
     const userData = await getUserData(userId);
     console.log(`Returning ${(userData.savedOutfits || []).length} saved outfits for user ${userId}`);
-    res.json(userData.savedOutfits || []);
+
+    const titleLookup = new Map<string, string>();
+    (userData.items || []).forEach((item: WardrobeItem) => {
+      const key = normalizeOutfitTitleKey(item.title);
+      if (!titleLookup.has(key)) {
+        titleLookup.set(key, item.title);
+      }
+    });
+
+    const cleanedOutfits = (userData.savedOutfits || []).map((outfit: SavedOutfit) => ({
+      ...outfit,
+      itemTitles: (outfit.itemTitles || []).map((title) => {
+        const key = normalizeOutfitTitleKey(title);
+        return titleLookup.get(key) || formatQuickEntryTitle(title);
+      }),
+    }));
+
+    res.json(cleanedOutfits);
   } catch (error) {
     console.error('Error fetching saved outfits:', error);
     res.status(500).json({ error: 'Failed to fetch saved outfits' });
@@ -795,9 +899,27 @@ app.post('/api/outfits/save', async (req, res) => {
       return res.status(400).json({ error: 'Item titles are required' });
     }
 
-    // Validate that all items exist
-    const allItemTitles = userData.items.map((item: WardrobeItem) => item.title);
-    const invalidTitles = itemTitles.filter((title: string) => !allItemTitles.includes(title));
+    const titleLookup = new Map<string, string>();
+    (userData.items || []).forEach((item: WardrobeItem) => {
+      const key = normalizeOutfitTitleKey(item.title);
+      if (!titleLookup.has(key)) {
+        titleLookup.set(key, item.title);
+      }
+    });
+
+    const resolvedTitles: string[] = [];
+    const invalidTitles: string[] = [];
+
+    (itemTitles as string[]).forEach((rawTitle) => {
+      const key = normalizeOutfitTitleKey(rawTitle);
+      const match = titleLookup.get(key);
+      if (match) {
+        resolvedTitles.push(match);
+      } else {
+        invalidTitles.push(rawTitle);
+      }
+    });
+
     if (invalidTitles.length > 0) {
       return res.status(400).json({ 
         error: 'Some items not found in wardrobe',
@@ -807,7 +929,7 @@ app.post('/api/outfits/save', async (req, res) => {
 
     const newOutfit: SavedOutfit = {
       id: uuidv4(),
-      itemTitles,
+      itemTitles: resolvedTitles,
       createdAt: new Date().toISOString(),
       prompt: prompt || undefined,
       notes: notes || undefined

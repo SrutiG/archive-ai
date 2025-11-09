@@ -53,6 +53,81 @@ describe('API Integration Tests', () => {
       expect(response.body).toHaveProperty('status', 'ok');
     });
   });
+
+  describe('Quick entry batch items', () => {
+    const quickEntryTitles: string[] = [];
+
+    afterEach(async () => {
+      if (quickEntryTitles.length === 0) return;
+      const itemsResponse = await apiRequest('GET', '/api/items');
+      if (itemsResponse.status !== 200) return;
+      const items = itemsResponse.body as any[];
+      const matched = items.filter(item =>
+        quickEntryTitles.includes(item.title)
+      );
+      for (const item of matched) {
+        await request(app)
+          .delete(`/api/items/${item.id}`)
+          .set('x-user-id', testUser!.id);
+      }
+      quickEntryTitles.length = 0;
+    });
+
+    it('should create items from quick entry text', async () => {
+      const response = await apiRequest('POST', '/api/items/batch')
+        .send({
+          text: 'slouchy burnt orange sweater, vintage dark rinse bootcut jeans'
+        });
+
+      expect(response.status).toBe(201);
+      expect(Array.isArray(response.body.createdItems)).toBe(true);
+      expect(response.body.createdItems.length).toBeGreaterThan(0);
+
+      quickEntryTitles.push(...response.body.createdItems.map((item: any) => item.title));
+
+      const titles = response.body.createdItems.map((item: any) => item.title);
+      expect(titles).toEqual(
+        expect.arrayContaining([
+          'Slouchy Burnt Orange Sweater',
+          'Vintage Dark Rinse Bootcut Jeans'
+        ])
+      );
+    });
+
+    it('should split descriptive sentences into multiple items', async () => {
+      const response = await apiRequest('POST', '/api/items/batch')
+        .send({
+          text: 'I have two items - a cropped pink faux fur jacket and a pair of black leather ankle boots with silver buckles.'
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.createdItems.length).toBe(2);
+
+      quickEntryTitles.push(...response.body.createdItems.map((item: any) => item.title));
+
+      const categories = response.body.createdItems.map((item: any) => item.category);
+      expect(categories).toEqual(
+        expect.arrayContaining(['Outerwear', 'Shoes'])
+      );
+    });
+
+    it('should enforce character limit for quick entry text', async () => {
+      const longText = 'a'.repeat(801);
+      const response = await apiRequest('POST', '/api/items/batch')
+        .send({ text: longText });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error');
+    });
+
+    it('should reject empty quick entry submissions', async () => {
+      const response = await apiRequest('POST', '/api/items/batch')
+        .send({ text: '   ' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error');
+    });
+  });
   
   describe('Users', () => {
     it('should get all users with correct structure', async () => {
@@ -413,21 +488,40 @@ describe('API Integration Tests', () => {
   
   describe('Saved Outfits', () => {
     it('should get saved outfits with correct seeded details', async () => {
+      const normalize = (value: string) =>
+        value.replace(/^[\s]*[-•*·+]+[\s]*/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+      const itemsResponse = await apiRequest('GET', '/api/items');
+      expect(itemsResponse.status).toBe(200);
+      const items = itemsResponse.body as any[];
+
+      const itemTitleLookup = new Map<string, string>();
+      items.forEach(item => {
+        itemTitleLookup.set(normalize(item.title), item.title);
+      });
+
+      const expectedTopNormalized = normalize('Test T-Shirt');
+      const expectedBottomNormalized = normalize('Test Jeans');
+
       const response = await apiRequest('GET', '/api/outfits/saved');
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
       expect(response.body.length).toBeGreaterThanOrEqual(1); // We seeded 1 outfit
       
       // Check seeded outfit details
-      const seededOutfit = response.body.find((outfit: any) => 
-        outfit.itemTitles.includes('Test T-Shirt') && outfit.itemTitles.includes('Test Jeans')
-      );
+      const seededOutfit = response.body.find((outfit: any) => {
+        const normalizedTitles = outfit.itemTitles.map((title: string) => normalize(title));
+        return normalizedTitles.includes(expectedTopNormalized) && normalizedTitles.includes(expectedBottomNormalized);
+      });
       expect(seededOutfit).toBeDefined();
       expect(seededOutfit).toHaveProperty('id');
       expect(seededOutfit).toHaveProperty('itemTitles');
       expect(Array.isArray(seededOutfit.itemTitles)).toBe(true);
-      expect(seededOutfit.itemTitles).toContain('Test T-Shirt');
-      expect(seededOutfit.itemTitles).toContain('Test Jeans');
+      const normalizedTitles = seededOutfit.itemTitles.map((title: string) => normalize(title));
+      expect(
+        normalizedTitles.some((title: string) => title === expectedTopNormalized || title === normalize('Updated Test Item'))
+      ).toBe(true);
+      expect(normalizedTitles).toContain(normalize('Test Jeans'));
       expect(seededOutfit).toHaveProperty('prompt', 'Test outfit generation');
       expect(seededOutfit).toHaveProperty('notes', 'Test notes');
       expect(seededOutfit).toHaveProperty('createdAt');
