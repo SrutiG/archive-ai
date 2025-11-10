@@ -1,0 +1,487 @@
+{
+    "wardrobe_categories": [
+      {
+        "category": "Tops",
+        "subcategories": [
+          {
+            "name": "Tees",
+            "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Avant-garde black {gender} tee with architectural silhouette and layered hems; minimalist styling, neutral grey cyclorama, soft directional lighting, editorial mood.",
+            "aspect_ratio": "1:1",
+          "variations": 3
+          },
+          {
+            "name": "Button-Ups",
+            "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Black avant-garde button-up shirt for {gender} featuring elongated cuffs and asymmetric tailoring; structured silhouette, matte textures, moody studio lighting.",
+            "aspect_ratio": "1:1",
+          "variations": 3
+          },
+          {
+            "name": "Sweaters",
+            "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Black avant-garde sweater with exaggerated volume and sculptural knitwork on {gender} model, atmospheric diffused light, clean grey backdrop.",
+            "aspect_ratio": "1:1",
+          "variations": 3
+          },
+          {
+            "name": "Tanks & Camis",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black sculptural camisole or tank with cutout geometry on {gender} figure; sleek styling, luminous side lighting, minimalist background.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "T-Shirts",
+          "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Black avant-garde t-shirt for {gender} with deconstructed seams and layered panels, neutral stance, editorial studio set, high-contrast lighting.",
+            "aspect_ratio": "1:1",
+          "variations": 3
+          },
+          {
+            "name": "Bodysuits",
+          "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Black avant-garde bodysuit with precise contouring and matte finish on {gender} model; cinematic lighting, soft vignette, plain background.",
+            "aspect_ratio": "1:1",
+          "variations": 3
+          },
+          {
+            "name": "Other",
+          "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Experimental black avant-garde top for {gender}, hybrid draped and structured elements, architectural silhouette, minimal neutral studio backdrop.",
+            "aspect_ratio": "1:1",
+          "variations": 2
+          }
+        ]
+      },
+      {
+        "category": "Bottoms",
+        "subcategories": [
+          {
+            "name": "Pants",
+            "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Black avant-garde trousers for {gender} with exaggerated pleats or wide-leg volume, neutral styling, editorial lighting, seamless grey set.",
+            "aspect_ratio": "1:1",
+          "variations": 3
+          },
+          {
+            "name": "Jeans",
+            "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Black avant-garde denim for {gender} featuring architectural seaming and elongated proportions, fashion editorial mood, minimal backdrop.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "Skirt",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde skirt with asymmetric hem and layered panels styled on {gender}; controlled lighting, neutral background, high-fashion tone.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "Shorts",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde tailored shorts on {gender} with extended silhouette or layered construction, directional lighting, minimalist studio set.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Leggings",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde leggings for {gender} with panelled texture and sleek sheen, dynamic fashion pose, soft grey backdrop, diffused light.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Joggers",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde joggers with tapered shape and layered technical details on {gender}; editorial lighting, minimalist environment.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Other",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Abstract black avant-garde bottom for {gender} combining skirt and pant elements, sculptural silhouette, subdued lighting, clean backdrop.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        }
+      ]
+    },
+    {
+      "category": "Dresses & One-Pieces",
+      "subcategories": [
+        {
+          "name": "Dresses",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde dress with architectural drape on {gender}; dramatic lighting, minimal stage, couture editorial mood.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "Jumpsuits & Rompers",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde jumpsuit for {gender} featuring sharp tailoring and utility hardware, spotlighted neutral background, fashion editorial aesthetic.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "Overalls",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde overalls styled on {gender} with layered straps and sculptural silhouette, moody studio setup, soft rim light.",
+            "aspect_ratio": "1:1",
+            "variations": 2
+          },
+          {
+          "name": "Other",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde one-piece hybrid for {gender}, experimental volume mixing dress and jumpsuit traits, minimal environment, cinematic lighting.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        }
+      ]
+    },
+    {
+      "category": "Outerwear",
+      "subcategories": [
+        {
+          "name": "Blazer",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde blazer on {gender} with sharp shoulders, elongated lapels, monochrome styling, editorial spotlight, neutral backdrop.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "Coat",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black sculptural avant-garde coat draped on {gender} with cocoon volume, cinematic lighting, minimalist environment.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "Jacket",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde jacket for {gender} with modular panels and technical textures, high-fashion pose, clean grey background.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "Trench",
+          "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Black avant-garde trench coat with exaggerated belt and fluid drape on {gender}, dramatic sidelight, minimalist stage.",
+            "aspect_ratio": "1:1",
+            "variations": 2
+          },
+          {
+          "name": "Cape",
+          "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Black avant-garde cape on {gender} with sweeping silhouette and structured collar, theatrical lighting, neutral vista.",
+            "aspect_ratio": "1:1",
+          "variations": 2
+          },
+          {
+            "name": "Other",
+          "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Full-body",
+          "prompt_template": "Experimental black avant-garde outer layer for {gender}, hybrid between coat and poncho; architectural lines, subdued lighting, clean background.",
+            "aspect_ratio": "1:1",
+          "variations": 2
+          }
+        ]
+      },
+      {
+        "category": "Shoes",
+        "subcategories": [
+          {
+            "name": "Boots",
+            "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Product-only",
+          "prompt_template": "Black avant-garde leather boots with sculptural outsole and matte finish, dramatic product lighting, seamless background, editorial aesthetic.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "Heels",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black architectural heels with futuristic curves designed for {gender}, displayed on polished surface, high-contrast studio lighting.",
+          "aspect_ratio": "1:1",
+          "variations": 3
+        },
+        {
+          "name": "Flats",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde flats for {gender} with geometric cutouts and matte leather, soft gradient backdrop, diffused edge lighting.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Sneakers",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde sneakers for {gender} featuring layered technical materials and sculptural soles, clean white set, crisp studio lighting.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Sandals",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde sandals with architectural straps for {gender}, displayed on concrete plinth, sharp lighting, minimal shadows.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Loafers",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde loafers for {gender} with elongated silhouette and glossy accents, editorial product setup, neutral background.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Other",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Conceptual black avant-garde footwear blending sneaker and boot traits for {gender}, floating presentation, soft halo lighting.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        }
+      ]
+    },
+    {
+      "category": "Bags",
+      "subcategories": [
+        {
+          "name": "Tote",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde tote bag with structured geometry and matte leather, staged on minimalist plinth, soft diffused key light.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Shoulder",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde shoulder bag for {gender}, angular hardware and sleek strap, suspended against neutral gradient, editorial product lighting.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Crossbody",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde crossbody bag with modular compartments for {gender}, clean acrylic surface, controlled reflections, high-fashion e-commerce look.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Clutch",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde clutch with faceted shell for {gender}, spotlighted on marble slab, dramatic contrast, luxury editorial mood.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Backpack",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde backpack with architectural silhouette for {gender}, matte nylon and leather mix, soft gradient background, product styling.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Belt Bag",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde belt bag for {gender} featuring sculpted compartments, displayed flat with angled strap, minimal lighting, neutral set.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Other",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Experimental black avant-garde bag concept for {gender}, hybrid form, suspended in air, subtle rim light, clean gradient background.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        }
+      ]
+    },
+    {
+      "category": "Accessories",
+      "subcategories": [
+        {
+          "name": "Belt",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde belt with sculptural buckle for {gender}, coiled on matte pedestal, precise lighting for texture, minimalist scene.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Hat",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde hat with dramatic brim and angular crown for {gender}, floating presentation, monochrome background, soft spotlight.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Scarf",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde scarf draped in fluid sculptural form for {gender}, gradient backdrop, gentle side lighting accentuating texture.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        },
+        {
+          "name": "Gloves",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde gloves with elongated fingers and matte finish for {gender}, arranged elegantly, high contrast lighting on neutral surface.",
+            "aspect_ratio": "1:1",
+            "variations": 2
+          },
+          {
+          "name": "Tights",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde tights for {gender}, displayed with abstract mannequin legs, soft lighting, minimal set, focus on pattern and sheen.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Socks",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde socks with geometric panels for {gender}, stacked neatly on marble block, diffused studio light, clean composition.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Sunglasses",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde sunglasses with sculptural frames for {gender}, mirrored surface, bright reflections, suspended display, gradient backdrop.",
+          "aspect_ratio": "16:9",
+          "variations": 2
+        },
+        {
+          "name": "Hair Accessory",
+          "gender": ["Women", "Men", "Unisex"],
+            "image_type": "Product-only",
+          "prompt_template": "Black avant-garde hair accessory for {gender} featuring metallic architecture, close-up arrangement, soft glow, neutral background.",
+            "aspect_ratio": "1:1",
+            "variations": 2
+          },
+          {
+            "name": "Other",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Conceptual black avant-garde accessory for {gender}, hybrid design, floating display, precise studio lighting, minimal setting.",
+          "aspect_ratio": "1:1",
+          "variations": 2
+        }
+      ]
+    },
+    {
+      "category": "Jewelry",
+      "subcategories": [
+        {
+          "name": "Necklace",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Macro",
+          "prompt_template": "Black avant-garde necklace for {gender}, oxidized metal with angular geometry, macro close-up on neutral stone surface, soft specular highlights.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Bracelet",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Macro",
+          "prompt_template": "Black avant-garde bracelet cuff for {gender}, sculptural metalwork, macro focus, matte acrylic plinth, diffused lighting.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Ring",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Macro",
+          "prompt_template": "Black avant-garde ring for {gender} with architectural facets, macro close-up on slate, dramatic rim light, high-end editorial feel.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Earrings",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Macro",
+          "prompt_template": "Black avant-garde earrings for {gender}, suspended minimal display, macro focus, subtle highlights, dark-to-light gradient background.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        },
+        {
+          "name": "Other",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Macro",
+          "prompt_template": "Experimental black avant-garde jewelry piece for {gender}, intricate mixed materials, macro shot, spotlighted neutral background, refined aesthetic.",
+          "aspect_ratio": "4:5",
+          "variations": 2
+        }
+      ]
+    },
+    {
+      "category": "Underwear & Sleepwear",
+      "subcategories": [
+        {
+          "name": "Underwear & Sleepwear",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Product-only",
+          "prompt_template": "Black avant-garde loungewear and undergarment set for {gender}, structured yet minimal design, displayed on textured linen with soft natural lighting.",
+          "aspect_ratio": "4:5",
+          "variations": 3
+        }
+      ]
+    },
+    {
+      "category": "Swimwear",
+      "subcategories": [
+        {
+          "name": "Swimwear",
+          "gender": ["Women", "Men", "Unisex"],
+          "image_type": "Full-body",
+          "prompt_template": "Black avant-garde swimwear for {gender}, sleek neoprene-inspired design, clean studio setting with subtle watery reflections, crisp lighting.",
+            "aspect_ratio": "1:1",
+          "variations": 3
+          }
+        ]
+      }
+    ]
+  }
+  
