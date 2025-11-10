@@ -1448,7 +1448,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
       const attemptStart = Date.now();
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
+        const timeout = setTimeout(() => controller.abort(), 45000);
         const response = await openai.chat.completions.create(
           {
             model: 'gpt-4o',
