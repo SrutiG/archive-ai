@@ -170,11 +170,12 @@ function createSeededRandom(seed: number): () => number {
   };
 }
 
-const LOWER_WEIGHTED_RANDOM_CATEGORIES = new Set([
-  'Underwear & Sleepwear',
-  'Swimwear',
-  'Activewear',
-]);
+const ANCHOR_CATEGORY_BASE_WEIGHTS: Record<string, number> = {
+  Tops: 6,
+  Bottoms: 6,
+  Shoes: 4,
+};
+const DEFAULT_ANCHOR_WEIGHT = 1;
 
 function selectAnchorItems(
   itemsByCategory: Record<string, WardrobeItem[]>,
@@ -187,15 +188,7 @@ function selectAnchorItems(
     return [];
   }
 
-  const weightedCategories: string[] = [];
-  entries.forEach(([category]) => {
-    const baseWeight = LOWER_WEIGHTED_RANDOM_CATEGORIES.has(category) ? 1 : 3;
-    for (let i = 0; i < baseWeight; i++) {
-      weightedCategories.push(category);
-    }
-  });
-
-  if (weightedCategories.length === 0) {
+  if (entries.length === 0) {
     return [];
   }
 
@@ -203,18 +196,40 @@ function selectAnchorItems(
   const usedItemIds = new Set<string>();
   const usedTitles = new Set<string>();
   const anchors: Array<{ category: string; anchorItem: WardrobeItem }> = [];
+  const categoryUsage = new Map<string, number>();
 
   for (let i = 0; i < outfitCount; i++) {
-    const category = (() => {
-      for (let attempt = 0; attempt < 20; attempt++) {
-        const candidateCategory = weightedCategories[Math.floor(rng() * weightedCategories.length)];
-        const pool = itemsByCategory[candidateCategory] || [];
-        if (pool.length > 0) {
-          return candidateCategory;
+    const weightedOptions = entries
+      .map(([category]) => {
+        const pool = itemsByCategory[category] || [];
+        if (!pool.length) {
+          return null;
         }
+        const baseWeight = ANCHOR_CATEGORY_BASE_WEIGHTS[category] ?? DEFAULT_ANCHOR_WEIGHT;
+        const usageCount = categoryUsage.get(category) ?? 0;
+        const adjustedWeight = baseWeight / (1 + usageCount);
+        return { category, weight: adjustedWeight > 0 ? adjustedWeight : 0 };
+      })
+      .filter((option): option is { category: string; weight: number } => option !== null && option.weight > 0);
+
+    if (weightedOptions.length === 0) {
+      break;
+    }
+
+    const categoryTotalWeight = weightedOptions.reduce((sum, option) => sum + option.weight, 0);
+    if (categoryTotalWeight <= 0) {
+      break;
+    }
+
+    let categoryRoll = rng() * categoryTotalWeight;
+    let category = weightedOptions[weightedOptions.length - 1]!.category;
+    for (const option of weightedOptions) {
+      categoryRoll -= option.weight;
+      if (categoryRoll <= 0) {
+        category = option.category;
+        break;
       }
-      return entries[Math.floor(rng() * entries.length)][0];
-    })();
+    }
 
     const pool = itemsByCategory[category] || [];
     if (pool.length === 0) {
@@ -268,6 +283,7 @@ function selectAnchorItems(
     if (usageCounts && usageKey) {
       usageCounts.set(usageKey, (usageCounts.get(usageKey) || 0) + 1);
     }
+    categoryUsage.set(category, (categoryUsage.get(category) || 0) + 1);
     anchors.push({ category, anchorItem });
   }
 
@@ -1368,6 +1384,7 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
 
           Generate ${generationCount} outfit combinations using the available wardrobe items. 
           Each outfit can include up to 10 pieces. You can include multiple items from the same category (e.g., multiple jewelry pieces, multiple jacket layers). 
+          Approach this as a visionary stylist who prefers interesting, risky, or unexpected styling choices about 70% of the time, provided they remain wearable and context-aware. Comfort and practicality matter, but when in doubt between a safe option and a compelling twist, favor the twist.
           Pay close attention to the user's style preferences and personal aesthetic when creating combinations.
           
           CRITICAL: You MUST use the EXACT item titles as provided in the wardrobe list. Do NOT modify, shorten, or paraphrase item titles. 
@@ -1379,11 +1396,23 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
           2. It's the only item available in that category (then it's acceptable to repeat)
           Otherwise, vary the items across outfits - use different tops, different bottoms, different shoes, etc. to create diverse outfit combinations.
           
+          JEWELRY EXPECTATION: If any jewelry pieces are available (necklaces, bracelets, rings, earrings, or other jewelry), include at least one jewelry item in every outfit. Treat jewelry as essential finishing touches—rotate pieces for variety, but do not omit jewelry unless the wardrobe has none.
+
           DUPLICATE CONTROL:
           - Limit outfits to a single bag and a single pair of shoes unless the user explicitly selected duplicates.
           - Layering bottoms (e.g., skirt over pants) or outerwear is allowed only when the styling is intentional—describe why the layering matters.
           - Multiple accessories are acceptable when they serve distinct purposes (e.g., hair clip plus earrings), but avoid redundant pieces that feel duplicative without justification.
           
+          LAYERING QUOTA:
+          - At least half of the outfits (rounded up) must feature intentional layering that showcases contrast or structure (e.g., corset over button-up, sheer top under blazer, sweater over collared shirt, tank or slip over fitted base, hoodie under trench, bolero or shrug over dress, long gloves layered with sleeveless pieces). Rotate the layering concepts across outfits so they feel distinct.
+          - When layering, explicitly explain why the combination works (contrast in fabric, proportion balance, highlighting a focal point, etc.).
+          - Avoid redundant stacks—each layer must clearly contribute to silhouette, texture, or storytelling.
+
+          LAYERING EVALUATION GUIDE:
+          Good layering should add interest, structure, or contrast. Reward combinations like contrasting lengths (long coat over mini skirt, cropped jacket over tunic, maxi dress with cropped cardigan), mixed textures (sheer top under structured blazer, satin slip over fine-rib knit turtleneck, leather over soft cotton or silk), purposeful oversizing (boxy blazer over fitted top, oversized shirt over tight tank, slouchy knit under tailored coat), statement inner layers (visible turtleneck under dress or shirt, graphic tee under blazer or slip dress, mesh long sleeve under corset or bustier), functional layering done right (vest over button-up, hoodie under trench, harness or belt bag over coat), playful silhouette disruption (corset over shirt or blazer, shrug or bolero over simple dress, arm warmers over long sleeves), fabric play in the same tone (monochrome with mixed materials such as wool + silk + nylon, transparent layer over opaque base), and balanced surprises (button-up under slip dress, long gloves with sleeveless top, denim vest over tailored dress).
+          Penalize layering that breaks silhouette logic or practicality, such as piling on too many tops without purpose, mismatched seasonality (puffer vest over linen slip dress, shearling with open-toe sandals), redundant or pointless stacks (two belts on the same waist, two jackets at once, socks over pants unless deliberately avant-garde), clashing silhouette logic (oversized coat + oversized hoodie + wide-leg pants with no structure, corset over puffer jacket, bolero over heavy outerwear), overly literal or costume-like pairings (swimwear under winter pieces, pajamas as mid-layer, scarf tied over hood), uncomfortable or impractical stacks (multiple collars, tight layers that bunch, leather pants under other pants), and confusing intent (shirt tied around waist and shoulders, random wraps that hide the silhouette).
+          Encourage bold, intentional layering choices that stay wearable and coherent with the outfit story.
+
           ${coreCategoryInstruction}
           
           FEEDBACK COMPLIANCE:
@@ -1414,50 +1443,70 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
     let messages: ChatCompletionMessageParam[] = buildMessages();
     let parsed: any = null;
     let responseDuration = 0;
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    const maxGenerationAttempts = 3;
+    for (let attempt = 1; attempt <= maxGenerationAttempts; attempt++) {
       const attemptStart = Date.now();
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages,
-        max_tokens: 10000,
-        temperature: 0.45,
-        response_format: { type: 'json_object' },
-      });
-      responseDuration = Date.now() - attemptStart;
-
-      if (response.usage) {
-        console.log(
-          `[LLM] Token usage: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion = ${response.usage.total_tokens} total (attempt ${attempt})`
-        );
-      }
-      console.log(`[LLM] API call took ${responseDuration}ms (attempt ${attempt})`);
-
-      const content = response.choices[0]?.message?.content?.trim();
-      if (!content) {
-        throw new Error('No response from LLM');
-      }
-      console.log(`[LLM] Response length: ${content.length} characters`);
-
       try {
-        parsed = JSON.parse(content);
-        break;
-      } catch (parseError) {
-        console.error(`[LLM] Error parsing LLM response (attempt ${attempt}):`, parseError);
-        if (parseError instanceof Error) {
-          console.error('[LLM] Parse error details:', parseError.message);
-        }
-        if (attempt === 3) {
-          throw new Error('LLM returned invalid JSON after multiple attempts');
-        }
-        messages = [
-          ...buildMessages(),
-          { role: 'assistant', content },
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+        const response = await openai.chat.completions.create(
           {
-            role: 'user',
-            content:
-              'The previous reply was not valid JSON. Re-send ONLY valid JSON that follows the required schema without any additional commentary.',
+            model: 'gpt-4o',
+            messages,
+            max_tokens: 10000,
+            temperature: 0.65,
+            response_format: { type: 'json_object' },
           },
-        ];
+          { signal: controller.signal }
+        );
+        clearTimeout(timeout);
+        responseDuration = Date.now() - attemptStart;
+
+        if (response.usage) {
+          console.log(
+            `[LLM] Token usage: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion = ${response.usage.total_tokens} total (attempt ${attempt})`
+          );
+        }
+        console.log(`[LLM] API call took ${responseDuration}ms (attempt ${attempt})`);
+
+        const content = response.choices[0]?.message?.content?.trim();
+        if (!content) {
+          throw new Error('No response from LLM');
+        }
+        console.log(`[LLM] Response length: ${content.length} characters`);
+
+        try {
+          parsed = JSON.parse(content);
+          break;
+        } catch (parseError) {
+          console.error(`[LLM] Error parsing LLM response (attempt ${attempt}):`, parseError);
+          if (parseError instanceof Error) {
+            console.error('[LLM] Parse error details:', parseError.message);
+          }
+          if (attempt === maxGenerationAttempts) {
+            throw new Error('LLM returned invalid JSON after multiple attempts');
+          }
+          messages = [
+            ...buildMessages(),
+            { role: 'assistant', content },
+            {
+              role: 'user',
+              content:
+                'The previous reply was not valid JSON. Re-send ONLY valid JSON that follows the required schema without any additional commentary.',
+            },
+          ];
+        }
+      } catch (error) {
+        responseDuration = Date.now() - attemptStart;
+        const isAbortError = error instanceof Error && error.name === 'AbortError';
+        console.error(
+          `[LLM] Error during OpenAI call (attempt ${attempt}, duration ${responseDuration}ms):`,
+          error
+        );
+        if (attempt >= maxGenerationAttempts || isAbortError) {
+          throw error;
+        }
+        console.log(`[LLM] Retrying outfit generation (attempt ${attempt + 1} of ${maxGenerationAttempts})...`);
       }
     }
 
