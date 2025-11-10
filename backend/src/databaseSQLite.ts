@@ -2,7 +2,19 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import { WardrobeItem, UserProfile, OutfitFeedback, ExploreSuggestion, SavedOutfit } from './index';
+import {
+  WardrobeItem,
+  UserProfile,
+  OutfitFeedback,
+  ExploreSuggestion,
+  SavedOutfit
+} from './index';
+import {
+  AdminGeneratedOutfitRecord,
+  AdminOutfitItemSummary,
+  AdminWardrobeItem,
+  OutfitTrainingRecord,
+} from './adminTypes';
 
 const DB_DIR = path.join(__dirname, '../data');
 const DB_FILE = path.join(DB_DIR, 'wardrobe.db');
@@ -58,6 +70,41 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS admin_wardrobe_items (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    brand TEXT,
+    category TEXT NOT NULL,
+    sub_category TEXT,
+    colors TEXT,
+    fabrics TEXT,
+    pattern TEXT,
+    silhouettes TEXT,
+    fit TEXT,
+    formalities TEXT,
+    style_tags TEXT,
+    seasons TEXT,
+    occasions TEXT,
+    care_notes TEXT,
+    image_url TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS admin_generated_outfits (
+    id TEXT PRIMARY KEY,
+    item_ids TEXT NOT NULL,
+    item_titles TEXT NOT NULL,
+    items TEXT NOT NULL,
+    prompt TEXT,
+    context TEXT,
+    justification TEXT,
+    styling_suggestions TEXT,
+    evaluation TEXT,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS user_profiles (
     user_id TEXT PRIMARY KEY,
     height INTEGER,
@@ -101,6 +148,20 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS outfit_training_data (
+    id TEXT PRIMARY KEY,
+    item_ids TEXT NOT NULL,
+    item_titles TEXT NOT NULL,
+    prompt TEXT,
+    context TEXT,
+    styling_notes TEXT,
+    feedback_type TEXT NOT NULL,
+    feedback_comment TEXT,
+    anchor_item_id TEXT,
+    generation_metadata TEXT,
+    created_at TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS explore_suggestions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -125,6 +186,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_saved_outfits_user ON saved_outfits(user_id);
   CREATE INDEX IF NOT EXISTS idx_outfit_feedback_user ON outfit_feedback(user_id);
   CREATE INDEX IF NOT EXISTS idx_explore_suggestions_user ON explore_suggestions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_admin_wardrobe_items_category ON admin_wardrobe_items(category);
+  CREATE INDEX IF NOT EXISTS idx_admin_generated_outfits_status ON admin_generated_outfits(status);
+  CREATE INDEX IF NOT EXISTS idx_admin_generated_outfits_created_at ON admin_generated_outfits(created_at);
+  CREATE INDEX IF NOT EXISTS idx_outfit_training_data_created_at ON outfit_training_data(created_at);
 `);
 
 // Migration: Add measurement columns if they don't exist (for existing databases)
@@ -203,6 +268,12 @@ try {
   if (!feedbackColumns.includes('item_ids')) {
     db.exec('ALTER TABLE outfit_feedback ADD COLUMN item_ids TEXT');
   }
+
+  const adminInfo = db.prepare("PRAGMA table_info(admin_wardrobe_items)").all() as any[];
+  const adminColumns = adminInfo.map(col => col.name);
+  if (!adminColumns.includes('pattern')) {
+    db.exec('ALTER TABLE admin_wardrobe_items ADD COLUMN pattern TEXT');
+  }
 } catch (error) {
   // Ignore errors if columns already exist or table doesn't exist
   console.log('Migration check for measurement columns:', error instanceof Error ? error.message : String(error));
@@ -263,6 +334,65 @@ const stmts = {
   insertFeedback: db.prepare('INSERT INTO outfit_feedback (id, user_id, item_ids, item_titles, type, feedback, prompt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
   deleteFeedback: db.prepare('DELETE FROM outfit_feedback WHERE id = ?'),
   
+  // Admin wardrobe items
+  getAdminWardrobeItems: db.prepare('SELECT * FROM admin_wardrobe_items ORDER BY created_at DESC'),
+  insertAdminWardrobeItem: db.prepare(`
+    INSERT INTO admin_wardrobe_items (
+      id, title, description, brand, category, sub_category, colors, fabrics, pattern, silhouettes, fit,
+      formalities, style_tags, seasons, occasions, care_notes, image_url, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  clearAdminWardrobeItems: db.prepare('DELETE FROM admin_wardrobe_items'),
+  listAdminGeneratedOutfits: db.prepare('SELECT * FROM admin_generated_outfits ORDER BY created_at DESC'),
+  insertAdminGeneratedOutfit: db.prepare(`
+    INSERT INTO admin_generated_outfits (
+      id,
+      item_ids,
+      item_titles,
+      items,
+      prompt,
+      context,
+      justification,
+      styling_suggestions,
+      evaluation,
+      status,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      item_ids = excluded.item_ids,
+      item_titles = excluded.item_titles,
+      items = excluded.items,
+      prompt = excluded.prompt,
+      context = excluded.context,
+      justification = excluded.justification,
+      styling_suggestions = excluded.styling_suggestions,
+      evaluation = excluded.evaluation,
+      status = excluded.status,
+      created_at = excluded.created_at
+  `),
+  deleteAdminGeneratedOutfit: db.prepare('DELETE FROM admin_generated_outfits WHERE id = ?'),
+  clearAdminGeneratedOutfits: db.prepare('DELETE FROM admin_generated_outfits'),
+
+  // Outfit training data
+  listOutfitTrainingData: db.prepare('SELECT * FROM outfit_training_data ORDER BY created_at DESC LIMIT ? OFFSET ?'),
+  insertOutfitTrainingData: db.prepare(`
+    INSERT INTO outfit_training_data (
+      id,
+      item_ids,
+      item_titles,
+      prompt,
+      context,
+      styling_notes,
+      feedback_type,
+      feedback_comment,
+      anchor_item_id,
+      generation_metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `),
+  clearOutfitTrainingData: db.prepare('DELETE FROM outfit_training_data'),
+  deleteOutfitTrainingRecord: db.prepare('DELETE FROM outfit_training_data WHERE id = ?'),
+
   // Explore suggestions
   getExploreSuggestions: db.prepare('SELECT * FROM explore_suggestions WHERE user_id = ? ORDER BY created_at DESC'),
   insertExploreSuggestion: db.prepare('INSERT INTO explore_suggestions (id, user_id, title, category, description, brand, link, image_url, pairs_well_with, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
@@ -313,6 +443,60 @@ function normalizeWhitespace(value: string): string {
 
 function normalizeTitleKey(value: string): string {
   return normalizeWhitespace(stripLeadingMarkers(value || '')).toLowerCase();
+}
+
+function serializeStringArray(value?: string[] | null): string | null {
+  if (!value || value.length === 0) {
+    return null;
+  }
+  return JSON.stringify(value);
+}
+
+function serializeJson(value?: Record<string, unknown> | null): string | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> | null {
+  if (!value) {
+    return null;
+  }
+  if (typeof value === 'object') {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function parseJsonArray<T = unknown>(value: unknown): T[] {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value as T[];
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as T[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 type UserItemIndex = {
@@ -367,6 +551,61 @@ function resolveItemIdsForUser(userId: string, titles: string[]): { ids: string[
   }
 
   return { ids: resolvedIds, titles: resolvedTitles };
+}
+
+function mapAdminWardrobeRow(row: any): AdminWardrobeItem {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description || undefined,
+    brand: row.brand || undefined,
+    category: row.category,
+    subCategory: row.sub_category || undefined,
+    colors: safeParseStringArray(row.colors),
+    fabrics: safeParseStringArray(row.fabrics),
+    pattern: row.pattern || undefined,
+    silhouettes: safeParseStringArray(row.silhouettes),
+    fit: row.fit || undefined,
+    formalities: safeParseStringArray(row.formalities),
+    styleTags: safeParseStringArray(row.style_tags),
+    seasons: safeParseStringArray(row.seasons),
+    occasions: safeParseStringArray(row.occasions),
+    careNotes: row.care_notes || undefined,
+    imageUrl: row.image_url || undefined,
+    createdAt: row.created_at
+  };
+}
+
+function mapOutfitTrainingRow(row: any): OutfitTrainingRecord {
+  return {
+    id: row.id,
+    itemIds: safeParseStringArray(row.item_ids),
+    itemTitles: safeParseStringArray(row.item_titles),
+    prompt: row.prompt || undefined,
+    context: row.context || undefined,
+    stylingNotes: row.styling_notes || undefined,
+    feedbackType: row.feedback_type,
+    feedbackComment: row.feedback_comment || undefined,
+    anchorItemId: row.anchor_item_id || null,
+    generationMetadata: parseJsonObject(row.generation_metadata),
+    createdAt: row.created_at
+  };
+}
+
+function mapAdminGeneratedOutfitRow(row: any): AdminGeneratedOutfitRecord {
+  return {
+    id: row.id,
+    itemIds: safeParseStringArray(row.item_ids),
+    itemTitles: safeParseStringArray(row.item_titles),
+    items: parseJsonArray<AdminOutfitItemSummary>(row.items),
+    prompt: row.prompt || undefined,
+    context: row.context || undefined,
+    justification: row.justification || '',
+    stylingSuggestions: parseJsonArray<string>(row.styling_suggestions),
+    evaluation: parseJsonObject(row.evaluation) as AdminGeneratedOutfitRecord['evaluation'],
+    status: (row.status || 'pending') as AdminGeneratedOutfitRecord['status'],
+    createdAt: row.created_at,
+  };
 }
 
 export function backfillOutfitItemIds(): void {
@@ -722,6 +961,139 @@ export function insertFeedback(userId: string, feedback: OutfitFeedback) {
 
 export function deleteFeedback(feedbackId: string) {
   stmts.deleteFeedback.run(feedbackId);
+}
+
+export function getAdminWardrobeItems(): AdminWardrobeItem[] {
+  const rows = stmts.getAdminWardrobeItems.all() as any[];
+  return rows.map(mapAdminWardrobeRow);
+}
+
+export function insertAdminWardrobeItems(items: AdminWardrobeItem[]): void {
+  if (!items.length) {
+    return;
+  }
+  const insert = stmts.insertAdminWardrobeItem;
+  const runInsert = db.transaction((batch: AdminWardrobeItem[]) => {
+    batch.forEach(item => {
+      insert.run(
+        item.id,
+        item.title,
+        item.description || null,
+        item.brand || null,
+        item.category,
+        item.subCategory || null,
+        serializeStringArray(item.colors),
+        serializeStringArray(item.fabrics),
+        item.pattern || null,
+        serializeStringArray(item.silhouettes),
+        item.fit || null,
+        serializeStringArray(item.formalities),
+        serializeStringArray(item.styleTags),
+        serializeStringArray(item.seasons),
+        serializeStringArray(item.occasions),
+        item.careNotes || null,
+        item.imageUrl || null,
+        item.createdAt
+      );
+    });
+  });
+  runInsert(items);
+}
+
+export function clearAdminWardrobeItems(): void {
+  stmts.clearAdminWardrobeItems.run();
+}
+
+export function listAdminGeneratedOutfits(): AdminGeneratedOutfitRecord[] {
+  const rows = stmts.listAdminGeneratedOutfits.all() as any[];
+  return rows.map(mapAdminGeneratedOutfitRow);
+}
+
+export function insertAdminGeneratedOutfits(records: AdminGeneratedOutfitRecord[]): void {
+  if (!records.length) {
+    return;
+  }
+  const insert = stmts.insertAdminGeneratedOutfit;
+  const runInsert = db.transaction((batch: AdminGeneratedOutfitRecord[]) => {
+    batch.forEach(record => {
+      insert.run(
+        record.id,
+        JSON.stringify(record.itemIds),
+        JSON.stringify(record.itemTitles),
+        JSON.stringify(record.items),
+        record.prompt || null,
+        record.context || null,
+        record.justification || '',
+        JSON.stringify(record.stylingSuggestions ?? []),
+        record.evaluation ? JSON.stringify(record.evaluation) : null,
+        record.status,
+        record.createdAt
+      );
+    });
+  });
+  runInsert(records);
+}
+
+export function deleteAdminGeneratedOutfit(id: string): void {
+  stmts.deleteAdminGeneratedOutfit.run(id);
+}
+
+export function clearAdminGeneratedOutfits(): void {
+  stmts.clearAdminGeneratedOutfits.run();
+}
+
+export function listOutfitTrainingData(limit = 50, offset = 0): OutfitTrainingRecord[] {
+  const rows = stmts.listOutfitTrainingData.all(limit, offset) as any[];
+  return rows.map(mapOutfitTrainingRow);
+}
+
+export function insertOutfitTrainingRecord(record: OutfitTrainingRecord): void {
+  stmts.insertOutfitTrainingData.run(
+    record.id,
+    JSON.stringify(record.itemIds),
+    JSON.stringify(record.itemTitles),
+    record.prompt || null,
+    record.context || null,
+    record.stylingNotes || null,
+    record.feedbackType,
+    record.feedbackComment || null,
+    record.anchorItemId || null,
+    serializeJson(record.generationMetadata),
+    record.createdAt
+  );
+}
+
+export function bulkInsertOutfitTrainingRecords(records: OutfitTrainingRecord[]): void {
+  if (!records.length) {
+    return;
+  }
+  const insert = stmts.insertOutfitTrainingData;
+  const runInsert = db.transaction((batch: OutfitTrainingRecord[]) => {
+    batch.forEach(record => {
+      insert.run(
+        record.id,
+        JSON.stringify(record.itemIds),
+        JSON.stringify(record.itemTitles),
+        record.prompt || null,
+        record.context || null,
+        record.stylingNotes || null,
+        record.feedbackType,
+        record.feedbackComment || null,
+        record.anchorItemId || null,
+        serializeJson(record.generationMetadata),
+        record.createdAt
+      );
+    });
+  });
+  runInsert(records);
+}
+
+export function clearOutfitTrainingData(): void {
+  stmts.clearOutfitTrainingData.run();
+}
+
+export function deleteOutfitTrainingRecord(id: string): void {
+  stmts.deleteOutfitTrainingRecord.run(id);
 }
 
 export function getExploreSuggestions(userId: string) {

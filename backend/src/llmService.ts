@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -11,6 +12,12 @@ import {
   WardrobeStyleTagOption,
   SavedOutfit,
 } from './index';
+import {
+  AdminOutfitCandidate,
+  AdminOutfitEvaluation,
+  AdminFeedbackType,
+} from './adminTypes';
+import { getAdminOutfitRubric } from './adminRubric';
 import { resolveSubCategory } from './wardrobeSubcategories';
 
 dotenv.config();
@@ -963,6 +970,11 @@ export interface GeneratedOutfit {
   stylingSuggestions: string[];
 }
 
+interface GenerateOutfitsOptions {
+  targetCount?: number;
+  forceFallback?: boolean;
+}
+
 export async function generateOutfits(
   itemsByCategory: Record<string, WardrobeItem[]>,
   userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[]; hairColor?: string; hairTexture?: string; skinColor?: string },
@@ -970,10 +982,17 @@ export async function generateOutfits(
   feedback?: OutfitFeedback[],
   selectedItems?: WardrobeItem[],
   savedOutfits?: SavedOutfit[],
-  userId?: string
+  userId?: string,
+  options?: GenerateOutfitsOptions
 ): Promise<GeneratedOutfit[]> {
+  const overrideCount = options?.targetCount;
   const parsedOutfitCount = Number.parseInt(process.env.OUTFIT_COUNT ?? '', 10);
-  const targetOutfitCount = Number.isFinite(parsedOutfitCount) && parsedOutfitCount > 0 ? parsedOutfitCount : 5;
+  const envTarget = Number.isFinite(parsedOutfitCount) && parsedOutfitCount > 0 ? parsedOutfitCount : undefined;
+  const normalizedOverride =
+    typeof overrideCount === 'number' && Number.isFinite(overrideCount) && overrideCount > 0
+      ? Math.min(Math.floor(overrideCount), 50)
+      : undefined;
+  const targetOutfitCount = normalizedOverride ?? envTarget ?? 5;
   const generationCount = Math.max(targetOutfitCount * 2, targetOutfitCount + 2);
   const selectedList = selectedItems ?? [];
   const savedOutfitList = savedOutfits ?? [];
@@ -1143,8 +1162,13 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
     }
   }
 
-  const fallbackRunner = () =>
-    generateFallbackOutfits(
+  const fallbackRunner = (reason: string, error?: unknown) => {
+    if (error) {
+      console.warn('[LLM] Falling back to heuristic outfits:', reason, error);
+    } else {
+      console.warn('[LLM] Falling back to heuristic outfits:', reason);
+    }
+    return generateFallbackOutfits(
       itemsByCoreCategory,
       coreCategoriesRequired,
       allItemsMap,
@@ -1154,12 +1178,17 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
         selectedItems: selectedList,
         anchorItems: anchorPlan.map(plan => plan.anchorItem),
       },
-      generationCount
+      targetOutfitCount
     );
+  };
+
+  if (options?.forceFallback) {
+    return fallbackRunner('forceFallback flag set');
+  }
 
   if (!openai) {
     console.warn('[LLM] OpenAI API key missing, using fallback outfit generator');
-    return fallbackRunner();
+    return fallbackRunner('missing OPENAI_API_KEY');
   }
   try {
     console.log('[LLM] Starting outfit generation...');
@@ -1328,13 +1357,10 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
     const allExactTitles = Object.values(itemsByCategory).flat().map(item => item.title).join(', ');
 
     console.log('[LLM] Calling OpenAI API for outfit generation...');
-    const startTime = Date.now();
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a fashion stylist.${selectedList.length === 0 && anchorPlan.length > 0 ? ` These anchor pieces MUST appear in their respective outfits:
+    const buildMessages = (): ChatCompletionMessageParam[] => [
+      {
+        role: 'system',
+        content: `You are a fashion stylist.${selectedList.length === 0 && anchorPlan.length > 0 ? ` These anchor pieces MUST appear in their respective outfits:
           ${anchorPlan.map((anchor, index) => {
             const anchorCategory = anchor.anchorItem.category || anchor.category;
             return `Outfit ${index + 1}: "${anchor.anchorItem.title}" (${anchorCategory}) is the hero and must be included verbatim.`;
@@ -1373,105 +1399,123 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
           - "justification": string explaining why this combination works
           - "stylingSuggestions": array of styling tips (e.g., ["wear blazer half buttoned", "wear hair in bun", "light makeup"])
           Example format: {"outfits": [{"items": ["Blue Shirt", "Black Jeans", "White Sneakers"], "justification": "This combination creates a casual yet polished look...", "stylingSuggestions": ["tuck in shirt", "cuff the sleeves"]}, ...]}
-          Only return the JSON object, no other text.`
-        },
-        {
-          role: 'user',
-          content: `${userContext}${selectedItemsContext}${anchorContext}${promptContext}${feedbackContext}${coreCategoryInstruction}${selectedList.length === 0 && anchorPlan.length > 0 ? `\n\nRemember: Outfit numbers ${anchorPlan.map((_, index) => index + 1).join(', ')} must include their anchor piece exactly as listed above.` : ''}\n\nGenerate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nVARIETY REQUIREMENT: Create VARIETY across the ${generationCount} outfits. Do NOT use the same item in every outfit unless:
+          Only return the JSON object, no other text. Every string in the JSON must use proper escaping (e.g., internal quotation marks as \\" and newline characters as \\n). Do NOT include unescaped quotation marks or control characters.`
+      },
+      {
+        role: 'user',
+        content: `${userContext}${selectedItemsContext}${anchorContext}${promptContext}${feedbackContext}${coreCategoryInstruction}${selectedList.length === 0 && anchorPlan.length > 0 ? `\n\nRemember: Outfit numbers ${anchorPlan.map((_, index) => index + 1).join(', ')} must include their anchor piece exactly as listed above.` : ''}\n\nGenerate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nVARIETY REQUIREMENT: Create VARIETY across the ${generationCount} outfits. Do NOT use the same item in every outfit unless:
 1. The user explicitly selected that item (then it MUST appear in all outfits)
 2. It's the only item available in that category (then it's acceptable to repeat)
 
-Otherwise, vary the items across outfits - use different tops, different bottoms, different shoes, different outerwear, etc. Each outfit should feel unique and different from the others. Only repeat items if they were explicitly selected by the user or if there's only one option in that category.\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the ${generationCount} generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''}${exclusionRules} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} ${anchorPlan.length > 0 ? 'For internal guidance only: keep the array order aligned with the anchor items listed above (Outfit 1 aligns with the first anchor, Outfit 2 with the second, etc.), include each anchor item, and highlight it as the hero piece without revealing that it was pre-selected.' : ''}Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly ${generationCount} outfit combinations. Remember: Use EXACT item titles from the list above - no modifications, abbreviations, or variations. Create VARIETY - do not repeat the same items across all outfits unless they were selected or are the only option.`
+Otherwise, vary the items across outfits - use different tops, different bottoms, different shoes, different outerwear, etc. Each outfit should feel unique and different from the others. Only repeat items if they were explicitly selected by the user or if there's only one option in that category.\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the ${generationCount} generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''}${exclusionRules} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} ${anchorPlan.length > 0 ? 'For internal guidance only: keep the array order aligned with the anchor items listed above (Outfit 1 aligns with the first anchor, Outfit 2 with the second, etc.), include each anchor item, and highlight it as the hero piece without revealing that it was pre-selected.' : ''}Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly ${generationCount} outfit combinations. Remember: Use EXACT item titles from the list above - no modifications, abbreviations, or variations. Create VARIETY - do not repeat the same items across all outfits unless they were selected or are the only option. Escape any quotation marks inside strings by prefixing them with a backslash, and encode newline characters as \\n.`
+      },
+    ];
+
+    let messages: ChatCompletionMessageParam[] = buildMessages();
+    let parsed: any = null;
+    let responseDuration = 0;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const attemptStart = Date.now();
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages,
+        max_tokens: 10000,
+        temperature: 0.45,
+        response_format: { type: 'json_object' },
+      });
+      responseDuration = Date.now() - attemptStart;
+
+      if (response.usage) {
+        console.log(
+          `[LLM] Token usage: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion = ${response.usage.total_tokens} total (attempt ${attempt})`
+        );
+      }
+      console.log(`[LLM] API call took ${responseDuration}ms (attempt ${attempt})`);
+
+      const content = response.choices[0]?.message?.content?.trim();
+      if (!content) {
+        throw new Error('No response from LLM');
+      }
+      console.log(`[LLM] Response length: ${content.length} characters`);
+
+      try {
+        parsed = JSON.parse(content);
+        break;
+      } catch (parseError) {
+        console.error(`[LLM] Error parsing LLM response (attempt ${attempt}):`, parseError);
+        if (parseError instanceof Error) {
+          console.error('[LLM] Parse error details:', parseError.message);
         }
-      ],
-      max_tokens: 2000,
-      temperature: 0.45,
-      response_format: { type: 'json_object' }
-    });
-    const duration = Date.now() - startTime;
-    
-    if (response.usage) {
-      console.log(`[LLM] Token usage: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion = ${response.usage.total_tokens} total`);
-    }
-    console.log(`[LLM] API call took ${duration}ms`);
-
-    const content = response.choices[0]?.message?.content?.trim();
-    if (!content) {
-      console.error('[LLM] No response content from API');
-      throw new Error('No response from LLM');
+        if (attempt === 3) {
+          throw new Error('LLM returned invalid JSON after multiple attempts');
+        }
+        messages = [
+          ...buildMessages(),
+          { role: 'assistant', content },
+          {
+            role: 'user',
+            content:
+              'The previous reply was not valid JSON. Re-send ONLY valid JSON that follows the required schema without any additional commentary.',
+          },
+        ];
+      }
     }
 
-    console.log(`[LLM] Response length: ${content.length} characters`);
-    
-    // Try to parse the response
+    if (!parsed) {
+      throw new Error('LLM did not return valid JSON');
+    }
+
     let outfits: GeneratedOutfit[];
-    try {
-      const parsed = JSON.parse(content);
-      // Handle both { "outfits": [...] } and direct array formats
-      if (Array.isArray(parsed)) {
-        // Convert old format to new format
-        outfits = parsed.map((outfit: any) => {
-          if (typeof outfit === 'object' && outfit.items) {
-            // Already in new format
-            return {
-              items: outfit.items || [],
-              justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
-              stylingSuggestions: outfit.stylingSuggestions || []
-            };
-          } else if (Array.isArray(outfit)) {
-            // Old format - array of strings
-            return {
-              items: outfit,
-              justification: 'This combination creates a stylish and cohesive look.',
-              stylingSuggestions: []
-            };
-          } else {
-            return {
-              items: [],
-              justification: 'This combination creates a stylish and cohesive look.',
-              stylingSuggestions: []
-            };
-          }
-        });
-        console.log('[LLM] Parsed as direct array');
-      } else if (parsed.outfits && Array.isArray(parsed.outfits)) {
-        outfits = parsed.outfits.map((outfit: any) => {
-          if (typeof outfit === 'object' && outfit.items) {
-            // New format
-            return {
-              items: outfit.items || [],
-              justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
-              stylingSuggestions: outfit.stylingSuggestions || []
-            };
-          } else if (Array.isArray(outfit)) {
-            // Old format - array of strings
-            return {
-              items: outfit,
-              justification: 'This combination creates a stylish and cohesive look.',
-              stylingSuggestions: []
-            };
-          } else {
-            return {
-              items: [],
-              justification: 'This combination creates a stylish and cohesive look.',
-              stylingSuggestions: []
-            };
-          }
-        });
-        console.log('[LLM] Parsed as object with outfits key');
-      } else {
-        throw new Error('Unexpected response format');
-      }
-      console.log(`[LLM] Successfully parsed ${outfits.length} outfits`);
-    } catch (parseError) {
-      // Fallback: try to extract outfit combinations from text
-      console.error('[LLM] Error parsing LLM response:', parseError);
-      if (parseError instanceof Error) {
-        console.error('[LLM] Parse error details:', parseError.message);
-      }
-      console.log('[LLM] Using fallback outfit generation');
-      return fallbackRunner();
+    if (Array.isArray(parsed)) {
+      outfits = parsed.map((outfit: any) => {
+        if (typeof outfit === 'object' && outfit.items) {
+          return {
+            items: outfit.items || [],
+            justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
+            stylingSuggestions: outfit.stylingSuggestions || [],
+          };
+        }
+        if (Array.isArray(outfit)) {
+          return {
+            items: outfit,
+            justification: 'This combination creates a stylish and cohesive look.',
+            stylingSuggestions: [],
+          };
+        }
+        return {
+          items: [],
+          justification: 'This combination creates a stylish and cohesive look.',
+          stylingSuggestions: [],
+        };
+      });
+      console.log('[LLM] Parsed as direct array');
+    } else if (parsed.outfits && Array.isArray(parsed.outfits)) {
+      outfits = parsed.outfits.map((outfit: any) => {
+        if (typeof outfit === 'object' && outfit.items) {
+          return {
+            items: outfit.items || [],
+            justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
+            stylingSuggestions: outfit.stylingSuggestions || [],
+          };
+        }
+        if (Array.isArray(outfit)) {
+          return {
+            items: outfit,
+            justification: 'This combination creates a stylish and cohesive look.',
+            stylingSuggestions: [],
+          };
+        }
+        return {
+          items: [],
+          justification: 'This combination creates a stylish and cohesive look.',
+          stylingSuggestions: [],
+        };
+      });
+      console.log('[LLM] Parsed as object with outfits key');
+    } else {
+      throw new Error('Unexpected response format');
     }
+    console.log(`[LLM] Successfully parsed ${outfits.length} outfits`);
 
     const allItemTitles = allItemsList.map(item => item.title);
     const beforeFilter = outfits.length;
@@ -1670,7 +1714,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
 
     if (outfits.length < targetOutfitCount) {
       console.warn(`[LLM] Only ${outfits.length} valid outfits after enforcement. Supplementing with fallback outfits.`);
-      const fallbackOutfits = fallbackRunner();
+      const fallbackOutfits = fallbackRunner('insufficient valid outfits after enforcement');
       for (const fallbackOutfit of fallbackOutfits) {
         if (outfits.length >= targetOutfitCount) {
           break;
@@ -1800,7 +1844,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
 
     if (outfits.length === 0) {
       console.log('[LLM] No valid outfits generated, using fallback');
-      return fallbackRunner();
+      return fallbackRunner('no outfits after filtering');
     }
     
     console.log(`[LLM] Successfully generated ${outfits.length} outfit combinations`);
@@ -1818,7 +1862,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
       console.error('[LLM] Stack:', error.stack);
     }
     console.log('[LLM] Using fallback outfit generation');
-    return fallbackRunner();
+    return fallbackRunner('LLM generation failure', error);
   }
 }
 
@@ -2130,8 +2174,324 @@ function generateFallbackOutfits(
   return outfits;
 }
 
+interface ParsedEvaluationRow {
+  outfitId: string;
+  score?: number;
+  confidence?: number;
+  verdict?: AdminFeedbackType;
+  filteredByTriage?: boolean;
+  rationale?: string;
+  notes?: string;
+}
+
+function buildAdminOutfitSummary(outfit: AdminOutfitCandidate): string {
+  const parts: string[] = [];
+  outfit.items.forEach(item => {
+    const attrParts: string[] = [];
+    if (item.colors?.length) attrParts.push(`Colors: ${item.colors.join(', ')}`);
+    if (item.silhouettes?.length) attrParts.push(`Silhouettes: ${item.silhouettes.join(', ')}`);
+    if (item.pattern) attrParts.push(`Pattern: ${item.pattern}`);
+    if (item.fit) attrParts.push(`Fit: ${item.fit}`);
+    if (item.formalities?.length) attrParts.push(`Formalities: ${item.formalities.join(', ')}`);
+    if (item.styleTags?.length) attrParts.push(`Style Tags: ${item.styleTags.join(', ')}`);
+    if (item.seasons?.length) attrParts.push(`Seasons: ${item.seasons.join(', ')}`);
+    if (item.occasions?.length) attrParts.push(`Occasions: ${item.occasions.join(', ')}`);
+    parts.push(
+      `- ${item.title} (${item.category}${
+        item.subCategory && item.subCategory !== 'Other' ? ` · ${item.subCategory}` : ''
+      }${item.brand ? ` · ${item.brand}` : ''})${attrParts.length ? ` | ${attrParts.join(' ; ')}` : ''}`,
+    );
+  });
+  if (outfit.justification) {
+    parts.push(`Why it works (model): ${outfit.justification}`);
+  }
+  if (outfit.stylingSuggestions?.length) {
+    parts.push(`Styling prompts: ${outfit.stylingSuggestions.join(' | ')}`);
+  }
+  if (outfit.prompt) {
+    parts.push(`User prompt/context: ${outfit.prompt}`);
+  }
+  return parts.join('\n');
+}
+
+function parseEvaluationResponse(content: string | undefined, source: 'triage' | 'final'): ParsedEvaluationRow[] {
+  if (!content) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(content);
+    const rows = Array.isArray(parsed?.evaluations) ? parsed.evaluations : parsed;
+    if (!Array.isArray(rows)) {
+      return [];
+    }
+    return rows
+      .map(row => {
+        if (!row || typeof row !== 'object') return null;
+        const outfitId = typeof row.outfitId === 'string' ? row.outfitId : undefined;
+        if (!outfitId) return null;
+        const score = typeof row.score === 'number' ? row.score : undefined;
+        const confidence = typeof row.confidence === 'number' ? row.confidence : undefined;
+        const verdict =
+          typeof row.verdict === 'string' ? (row.verdict.toLowerCase() as AdminFeedbackType) : undefined;
+        const filteredByTriage =
+          source === 'triage' && typeof row.filteredByTriage === 'boolean' ? row.filteredByTriage : undefined;
+        const rationale = typeof row.rationale === 'string' ? row.rationale : undefined;
+        const notes = typeof row.notes === 'string' ? row.notes : undefined;
+        return { outfitId, score, confidence, verdict, filteredByTriage, rationale, notes } as ParsedEvaluationRow;
+      })
+      .filter((row): row is ParsedEvaluationRow => row !== null);
+  } catch (error) {
+    console.error(`[Admin][${source}] Failed to parse evaluation JSON`, error);
+    return [];
+  }
+}
+
+function assessOutfitStructure(outfit: AdminOutfitCandidate): { ok: boolean; issues: string[] } {
+  const issues: string[] = [];
+  const categoryCounts = new Map<string, number>();
+  outfit.items.forEach(item => {
+    const count = categoryCounts.get(item.category) ?? 0;
+    categoryCounts.set(item.category, count + 1);
+  });
+
+  const hasSwimwear = categoryCounts.has('Swimwear');
+  const hasDresses = categoryCounts.has('Dresses & One-Pieces');
+  const hasBottoms = categoryCounts.has('Bottoms');
+  const hasTops = categoryCounts.has('Tops');
+  const hasOuterwear = categoryCounts.has('Outerwear');
+
+  if (hasSwimwear) {
+    const conflicts: string[] = [];
+    if (hasDresses) conflicts.push('dresses & one-pieces');
+    if (hasBottoms) conflicts.push('bottoms');
+    if (hasTops || hasOuterwear) conflicts.push('layering pieces');
+    if (conflicts.length > 0) {
+      issues.push(`Swimwear paired with ${conflicts.join(', ')} feels impractical.`);
+    }
+    if ((categoryCounts.get('Swimwear') ?? 0) > 1) {
+      issues.push('Multiple swimwear pieces layered together.');
+    }
+  }
+
+  const dressCount = categoryCounts.get('Dresses & One-Pieces') ?? 0;
+  if (dressCount > 1) {
+    issues.push('Stacking multiple dresses / one-pieces in a single look.');
+  }
+
+  const sleepwearCount = categoryCounts.get('Underwear & Sleepwear') ?? 0;
+  if (sleepwearCount > 0 && (hasDresses || hasBottoms || hasTops)) {
+    issues.push('Sleepwear mixed with full daytime layers.');
+  }
+
+  return { ok: issues.length === 0, issues };
+}
+
+export async function evaluateAdminOutfits(
+  candidates: AdminOutfitCandidate[],
+  prompt?: string,
+): Promise<AdminOutfitEvaluation[]> {
+  if (!candidates.length) {
+    return [];
+  }
+
+  if (!openai) {
+    return candidates.map(outfit => ({
+      outfitId: outfit.id,
+      aiNotes: 'AI evaluation skipped (missing OPENAI_API_KEY).',
+    }));
+  }
+
+  const rubric = getAdminOutfitRubric();
+
+  const triagePayload = candidates
+    .map((outfit, index) => `OUTFIT ${index + 1} (id: ${outfit.id})\n${buildAdminOutfitSummary(outfit)}`)
+    .join('\n\n');
+
+  let triageRows: ParsedEvaluationRow[] = [];
+
+  try {
+      console.log('[Admin][triage] Request payload:\n', triagePayload);
+    const triageResponse = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `You are the triage judge for a fashion curation team. Use the rubric below to score each outfit from 0-12 and assign a confidence score (0-10). Flag any outfit for automatic rejection if SCORE < 5 AND confidence >= 7. Provide concise notes. Rubric:\n\n${rubric}`,
+        },
+        {
+          role: 'user',
+          content: `Evaluate the following outfits. Respond as JSON: {"evaluations": [{"outfitId": "...", "score": number, "confidence": number, "verdict": "like|dislike|neutral", "filteredByTriage": boolean, "notes": "..."}]}.\nRemember: filteredByTriage MUST be true only when score < 5 AND confidence >= 7.\n\n${triagePayload}`,
+        },
+      ],
+      max_tokens: 1500,
+    });
+
+    const triageContent = triageResponse.choices[0]?.message?.content ?? undefined;
+    if (triageContent) {
+      console.log('[Admin][triage] Raw response:\n', triageContent);
+    } else {
+      console.warn('[Admin][triage] Empty response content from gpt-4o-mini.');
+    }
+    triageRows = parseEvaluationResponse(triageContent, 'triage');
+  } catch (error) {
+    console.error('[Admin][triage] Failed to evaluate outfits with gpt-4o-mini:', error);
+  }
+
+  const triageMap = new Map<string, ParsedEvaluationRow>();
+  triageRows.forEach(row => {
+    triageMap.set(row.outfitId, row);
+  });
+
+  const escalationCandidates = candidates.filter(outfit => {
+    const triage = triageMap.get(outfit.id);
+    if (!triage) return true;
+    return !(triage.filteredByTriage === true);
+  });
+
+  let finalRows: ParsedEvaluationRow[] = [];
+
+  if (escalationCandidates.length > 0) {
+    const finalPayload = escalationCandidates
+      .map(outfit => {
+        const triage = triageMap.get(outfit.id);
+        const header = `OUTFIT (id: ${outfit.id})`;
+        const triageSummary = triage
+          ? `Triage score: ${triage.score ?? 'n/a'} | confidence: ${triage.confidence ?? 'n/a'} | verdict: ${
+              triage.verdict ?? 'n/a'
+            } | notes: ${triage.notes ?? 'n/a'}`
+          : 'No triage data (evaluate from scratch).';
+        return `${header}\n${triageSummary}\n${buildAdminOutfitSummary(outfit)}`;
+      })
+      .join('\n\n');
+
+    try {
+      console.log('[Admin][final] Request payload:\n', finalPayload);
+      const finalResponse = await openai.chat.completions.create({
+        model: 'gpt-4.1',
+        temperature: 0.15,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `You are the final fashion judge. Apply the rubric to deliver a definitive verdict. Provide:
+- score (0-12)
+- confidence (0-10)
+- verdict (like/dislike/neutral)
+- rationale (2-3 sentences)
+- notes (optional succinct bullet-style remarks)
+Use JSON format. Use the 'neutral' verdict only when the look truly requires human review; otherwise choose like or dislike based on the rubric. Rubric:\n\n${rubric}`,
+          },
+          {
+            role: 'user',
+            content: `Finalize the evaluation for each outfit. Output {"evaluations": [{"outfitId": "...", "score": number, "confidence": number, "verdict": "like|dislike|neutral", "rationale": "...", "notes": "..."}]}.\n\n${finalPayload}`,
+          },
+        ],
+        max_tokens: 2000,
+      });
+
+      const finalContent = finalResponse.choices[0]?.message?.content ?? undefined;
+      if (finalContent) {
+        console.log('[Admin][final] Raw response:\n', finalContent);
+      } else {
+        console.warn('[Admin][final] Empty response content from gpt-4.1.');
+      }
+      finalRows = parseEvaluationResponse(finalContent, 'final');
+    } catch (error) {
+      console.error('[Admin][final] Failed to run GPT-4.1 evaluation:', error);
+    }
+  }
+
+  const finalMap = new Map<string, ParsedEvaluationRow>();
+  finalRows.forEach(row => {
+    finalMap.set(row.outfitId, row);
+  });
+
+  return candidates.map(outfit => {
+    const triage = triageMap.get(outfit.id);
+    const finalEval = finalMap.get(outfit.id);
+
+    const evaluation: AdminOutfitEvaluation = {
+      outfitId: outfit.id,
+      triageScore: triage?.score,
+      triageConfidence: triage?.confidence,
+      triageVerdict: triage?.verdict,
+      filteredByTriage: triage?.filteredByTriage,
+      aiNotes: triage?.notes,
+    };
+
+    if (finalEval) {
+      evaluation.finalScore = finalEval.score;
+      evaluation.finalConfidence = finalEval.confidence;
+      evaluation.finalVerdict = finalEval.verdict;
+      evaluation.finalRationale = finalEval.rationale;
+      evaluation.aiNotes = finalEval.notes ?? evaluation.aiNotes;
+    }
+
+    const finalScore = evaluation.finalScore ?? evaluation.triageScore;
+    const finalConfidence = evaluation.finalConfidence ?? evaluation.triageConfidence;
+    let finalVerdict = evaluation.finalVerdict ?? evaluation.triageVerdict;
+    const structureAssessment = assessOutfitStructure(outfit);
+    if (structureAssessment.issues.length > 0) {
+      evaluation.structuralIssues = structureAssessment.issues;
+      const structureNote = `Structure issues detected: ${structureAssessment.issues.join(' ')}`;
+      evaluation.aiNotes = evaluation.aiNotes
+        ? `${structureNote} ${evaluation.aiNotes}`
+        : structureNote;
+    }
+
+    if (evaluation.filteredByTriage) {
+      evaluation.autoRejected = true;
+    }
+
+    if (finalVerdict === 'neutral') {
+      if (structureAssessment.issues.length > 0) {
+        finalVerdict = 'dislike';
+      } else if (finalScore !== undefined) {
+        finalVerdict = finalScore >= 8 ? 'like' : 'dislike';
+      } else if (evaluation.triageScore !== undefined) {
+        finalVerdict = evaluation.triageScore >= 8 ? 'like' : 'dislike';
+      } else {
+        finalVerdict = 'dislike';
+      }
+      if (evaluation.finalVerdict !== undefined) {
+        evaluation.finalVerdict = finalVerdict;
+      } else if (evaluation.triageVerdict !== undefined) {
+        evaluation.triageVerdict = finalVerdict;
+      }
+    }
+
+    if (!evaluation.autoRejected && finalScore !== undefined && finalConfidence !== undefined) {
+      if (finalScore <= 6 && finalConfidence >= 7) {
+        evaluation.autoRejected = true;
+      }
+    }
+
+    if (!evaluation.autoRejected && structureAssessment.issues.length === 0 && finalScore !== undefined && finalConfidence !== undefined) {
+      const rationaleOk = evaluation.finalRationale && evaluation.finalRationale.trim().length >= 24;
+      if (finalScore >= 9 && finalConfidence >= 8 && finalVerdict === 'like' && rationaleOk) {
+        evaluation.autoApproved = true;
+      }
+    }
+
+    if (structureAssessment.issues.length > 0) {
+      evaluation.autoApproved = false;
+      if (!evaluation.autoRejected && finalScore !== undefined && finalScore < 7) {
+        evaluation.autoRejected = true;
+      }
+    }
+
+    return evaluation;
+  });
+}
+
 export const __test__ = {
   selectAnchorItems,
   createSeededRandom,
   generateFallbackOutfits,
+  anchorSelectionHistory,
+  buildAdminOutfitSummary,
+  parseEvaluationResponse,
+  assessOutfitStructure,
 };

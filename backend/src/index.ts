@@ -24,6 +24,7 @@ import {
   listAllSubCategories,
   resolveSubCategory,
 } from './wardrobeSubcategories';
+import adminRouter from './adminRouter';
 
 // Initialize PostgreSQL schema if using PostgreSQL
 if (process.env.DATABASE_URL && typeof db.initializeSchema === 'function') {
@@ -53,6 +54,8 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
+console.log('[Admin] ADMIN_PASSWORD set?', !!process.env.ADMIN_PASSWORD);
+
 // Logging middleware (after body parsing)
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
@@ -65,6 +68,8 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+app.use('/api/admin', adminRouter);
 
 const QUICK_ENTRY_CHAR_LIMIT = 800;
 

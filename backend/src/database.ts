@@ -4,10 +4,19 @@
 
 import dotenv from 'dotenv';
 import type { SavedOutfit, OutfitFeedback } from './index';
+import type {
+  AdminGeneratedOutfitRecord,
+  AdminWardrobeItem,
+  OutfitTrainingRecord,
+} from './adminTypes';
 dotenv.config();
 
 // Check if PostgreSQL is configured
 const USE_POSTGRES = !!process.env.DATABASE_URL;
+
+export function isPostgresDatabase(): boolean {
+  return USE_POSTGRES;
+}
 
 let pgDb: any = null;
 let sqliteDb: any = null;
@@ -222,6 +231,93 @@ export async function upsertExploreUpdate(userId: string, lastUpdate: string) {
     return pgDb.upsertExploreUpdate(userId, lastUpdate);
   }
   return Promise.resolve(sqliteDb.upsertExploreUpdate(userId, lastUpdate));
+}
+
+export async function getAdminWardrobeItems(): Promise<AdminWardrobeItem[]> {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.getAdminWardrobeItems();
+  }
+  return Promise.resolve(sqliteDb.getAdminWardrobeItems());
+}
+
+export async function insertAdminWardrobeItems(items: AdminWardrobeItem[]) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.insertAdminWardrobeItems(items);
+  }
+  return Promise.resolve(sqliteDb.insertAdminWardrobeItems(items));
+}
+
+export async function clearAdminWardrobeItems() {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.clearAdminWardrobeItems();
+  }
+  return Promise.resolve(sqliteDb.clearAdminWardrobeItems());
+}
+
+export async function insertAdminGeneratedOutfits(records: AdminGeneratedOutfitRecord[]) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.insertAdminGeneratedOutfits(records);
+  }
+  return Promise.resolve(sqliteDb.insertAdminGeneratedOutfits(records));
+}
+
+export async function listAdminGeneratedOutfits(): Promise<AdminGeneratedOutfitRecord[]> {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.listAdminGeneratedOutfits();
+  }
+  return Promise.resolve(sqliteDb.listAdminGeneratedOutfits());
+}
+
+export async function deleteAdminGeneratedOutfit(id: string) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.deleteAdminGeneratedOutfit(id);
+  }
+  return Promise.resolve(sqliteDb.deleteAdminGeneratedOutfit(id));
+}
+
+export async function clearAdminGeneratedOutfits() {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.clearAdminGeneratedOutfits();
+  }
+  return Promise.resolve(sqliteDb.clearAdminGeneratedOutfits());
+}
+
+export async function listOutfitTrainingData(limit = 50, offset = 0): Promise<OutfitTrainingRecord[]> {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.listOutfitTrainingData(limit, offset);
+  }
+  return Promise.resolve(sqliteDb.listOutfitTrainingData(limit, offset));
+}
+
+export async function insertOutfitTrainingRecord(record: OutfitTrainingRecord) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.insertOutfitTrainingRecord(record);
+  }
+  return Promise.resolve(sqliteDb.insertOutfitTrainingRecord(record));
+}
+
+export async function bulkInsertOutfitTrainingRecords(records: OutfitTrainingRecord[]) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.bulkInsertOutfitTrainingRecords(records);
+  }
+  return Promise.resolve(sqliteDb.bulkInsertOutfitTrainingRecords(records));
+}
+
+export async function clearOutfitTrainingData() {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.clearOutfitTrainingData();
+  }
+  return Promise.resolve(sqliteDb.clearOutfitTrainingData());
+}
+
+export async function deleteOutfitTrainingRecord(id: string) {
+  if (USE_POSTGRES && pgDb && typeof pgDb.deleteOutfitTrainingRecord === 'function') {
+    return pgDb.deleteOutfitTrainingRecord(id);
+  }
+  if (!USE_POSTGRES && sqliteDb && typeof sqliteDb.deleteOutfitTrainingRecord === 'function') {
+    return Promise.resolve(sqliteDb.deleteOutfitTrainingRecord(id));
+  }
+  return Promise.resolve();
 }
 
 export async function closeDatabase() {

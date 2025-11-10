@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import './App.css';
 import { UserProvider, useUser } from './contexts/UserContext';
 import Navigation from './components/Navigation';
@@ -8,6 +8,7 @@ import ProfilePage from './pages/ProfilePage';
 import WardrobePage from './pages/WardrobePage';
 import OutfitsPage from './pages/OutfitsPage';
 import ExplorePage from './pages/ExplorePage';
+import AdminPortal from './pages/AdminPortal';
 
 export type WardrobeColorOption =
   | 'black'
@@ -189,10 +190,63 @@ export interface UserProfile {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+const ProtectedRoutes: React.FC<{ currentUser: ReturnType<typeof useUser>['currentUser'] }> = ({ currentUser }) => {
+  const location = useLocation();
+  const isAdminRoute = location.pathname.startsWith('/admin');
+  const isAuthenticated = Boolean(currentUser);
+
+  return (
+    <div className={`App${isAdminRoute ? ' App--admin' : ''}`}>
+      {isAuthenticated && !isAdminRoute && <Navigation />}
+
+      <main className={isAdminRoute ? 'Admin-main' : 'App-main'}>
+        <Routes>
+          <Route path="/admin" element={<AdminPortal />} />
+          <Route
+            path="/"
+            element={
+              isAuthenticated ? <WardrobePage apiUrl={API_BASE_URL} /> : <LoginPage />
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              isAuthenticated ? <ProfilePage apiUrl={API_BASE_URL} /> : <LoginPage />
+            }
+          />
+          <Route
+            path="/wardrobe"
+            element={
+              isAuthenticated ? <WardrobePage apiUrl={API_BASE_URL} /> : <LoginPage />
+            }
+          />
+          <Route
+            path="/outfits"
+            element={
+              isAuthenticated ? <OutfitsPage apiUrl={API_BASE_URL} /> : <LoginPage />
+            }
+          />
+          <Route
+            path="/explore"
+            element={
+              isAuthenticated ? <ExplorePage apiUrl={API_BASE_URL} /> : <LoginPage />
+            }
+          />
+          <Route
+            path="*"
+            element={
+              isAuthenticated ? <WardrobePage apiUrl={API_BASE_URL} /> : <LoginPage />
+            }
+          />
+        </Routes>
+      </main>
+    </div>
+  );
+};
+
 const AppContent: React.FC = () => {
   const { currentUser, isLoading } = useUser();
 
-  // Show loading state while checking for user
   if (isLoading) {
     return (
       <div className="App-loading">
@@ -201,26 +255,9 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Show login page if no user is selected
-  if (!currentUser) {
-    return <LoginPage />;
-  }
-
   return (
     <Router>
-      <div className="App">
-        <Navigation />
-        
-        <main className="App-main">
-          <Routes>
-            <Route path="/" element={<WardrobePage apiUrl={API_BASE_URL} />} />
-            <Route path="/profile" element={<ProfilePage apiUrl={API_BASE_URL} />} />
-            <Route path="/wardrobe" element={<WardrobePage apiUrl={API_BASE_URL} />} />
-            <Route path="/outfits" element={<OutfitsPage apiUrl={API_BASE_URL} />} />
-            <Route path="/explore" element={<ExplorePage apiUrl={API_BASE_URL} />} />
-          </Routes>
-        </main>
-      </div>
+      <ProtectedRoutes currentUser={currentUser} />
     </Router>
   );
 };
