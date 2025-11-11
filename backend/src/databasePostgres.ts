@@ -13,6 +13,7 @@ import {
   AdminWardrobeItem,
   OutfitTrainingRecord,
 } from './adminTypes';
+import type { StyleMetrics } from './styleMetricsTypes';
 
 dotenv.config();
 
@@ -420,6 +421,7 @@ export async function initializeSchema(): Promise<void> {
       styling_suggestions TEXT,
       evaluation TEXT,
       status TEXT NOT NULL,
+      style_metrics JSONB,
       created_at TEXT NOT NULL
     );
 
@@ -464,6 +466,8 @@ export async function initializeSchema(): Promise<void> {
       item_titles TEXT NOT NULL,
       prompt TEXT,
       notes TEXT,
+      style_metrics JSONB,
+      saved BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
@@ -471,13 +475,15 @@ export async function initializeSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS outfit_feedback (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
+      outfit_id TEXT,
       item_ids TEXT,
       item_titles TEXT NOT NULL,
       type TEXT NOT NULL,
       feedback TEXT,
       prompt TEXT,
       created_at TEXT NOT NULL,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (outfit_id) REFERENCES saved_outfits(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS explore_suggestions (
@@ -578,8 +584,23 @@ export async function initializeSchema(): Promise<void> {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'outfit_feedback' AND column_name = 'item_ids') THEN
           ALTER TABLE outfit_feedback ADD COLUMN item_ids TEXT;
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'outfit_feedback' AND column_name = 'style_metrics') THEN
+          ALTER TABLE outfit_feedback ADD COLUMN style_metrics JSONB;
+        END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'admin_wardrobe_items' AND column_name = 'pattern') THEN
           ALTER TABLE admin_wardrobe_items ADD COLUMN pattern TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'saved_outfits' AND column_name = 'style_metrics') THEN
+          ALTER TABLE saved_outfits ADD COLUMN style_metrics JSONB;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'saved_outfits' AND column_name = 'saved') THEN
+          ALTER TABLE saved_outfits ADD COLUMN saved BOOLEAN NOT NULL DEFAULT FALSE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'admin_generated_outfits' AND column_name = 'style_metrics') THEN
+          ALTER TABLE admin_generated_outfits ADD COLUMN style_metrics JSONB;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'outfit_feedback' AND column_name = 'outfit_id') THEN
+          ALTER TABLE outfit_feedback ADD COLUMN outfit_id TEXT;
         END IF;
       END $$;
     `);
@@ -892,6 +913,24 @@ export async function upsertProfile(userId: string, profile: UserProfile) {
 }
 
 export async function getSavedOutfits(userId: string) {
+  const result = await query('SELECT * FROM saved_outfits WHERE user_id = $1 AND saved = TRUE ORDER BY created_at DESC', [userId]);
+  return result.rows.map(row => ({
+    id: row.id,
+    itemIds: safeParseStringArray(row.item_ids),
+    itemTitles: safeParseStringArray(row.item_titles),
+    prompt: row.prompt || undefined,
+    notes: row.notes || undefined,
+    createdAt: row.created_at,
+    styleMetrics: row.style_metrics
+      ? ((typeof row.style_metrics === 'string'
+          ? JSON.parse(row.style_metrics)
+          : row.style_metrics) as StyleMetrics)
+      : null,
+    saved: row.saved === true || row.saved === 1 || row.saved === 't',
+  }));
+}
+
+export async function getAllUserOutfits(userId: string) {
   const result = await query('SELECT * FROM saved_outfits WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
   return result.rows.map(row => ({
     id: row.id,
@@ -899,13 +938,19 @@ export async function getSavedOutfits(userId: string) {
     itemTitles: safeParseStringArray(row.item_titles),
     prompt: row.prompt || undefined,
     notes: row.notes || undefined,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    styleMetrics: row.style_metrics
+      ? ((typeof row.style_metrics === 'string'
+          ? JSON.parse(row.style_metrics)
+          : row.style_metrics) as StyleMetrics)
+      : null,
+    saved: row.saved === true || row.saved === 1 || row.saved === 't',
   }));
 }
 
 export async function insertSavedOutfit(userId: string, outfit: SavedOutfit) {
   await query(
-    'INSERT INTO saved_outfits (id, user_id, item_ids, item_titles, prompt, notes, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+    'INSERT INTO saved_outfits (id, user_id, item_ids, item_titles, prompt, notes, style_metrics, saved, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
     [
       outfit.id,
       userId,
@@ -913,6 +958,8 @@ export async function insertSavedOutfit(userId: string, outfit: SavedOutfit) {
       JSON.stringify(outfit.itemTitles || []),
       outfit.prompt || null,
       outfit.notes || null,
+      outfit.styleMetrics ? JSON.stringify(outfit.styleMetrics) : null,
+      outfit.saved,
       outfit.createdAt
     ]
   );
@@ -923,36 +970,80 @@ export async function deleteSavedOutfit(outfitId: string) {
 }
 
 export async function getFeedback(userId: string) {
-  const result = await query('SELECT * FROM outfit_feedback WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
-  return result.rows.map(row => ({
-    id: row.id,
-    itemIds: safeParseStringArray(row.item_ids),
-    itemTitles: safeParseStringArray(row.item_titles),
-    type: row.type,
-    feedback: row.feedback || undefined,
-    prompt: row.prompt || undefined,
-    createdAt: row.created_at
-  }));
+  const result = await query(
+    `SELECT f.*,
+            o.item_ids AS outfit_item_ids,
+            o.item_titles AS outfit_item_titles,
+            o.prompt AS outfit_prompt,
+            o.notes AS outfit_notes,
+            o.style_metrics AS outfit_style_metrics,
+            o.created_at AS outfit_created_at,
+            o.saved AS outfit_saved
+     FROM outfit_feedback f
+     LEFT JOIN saved_outfits o ON f.outfit_id = o.id
+     WHERE f.user_id = $1
+     ORDER BY f.created_at DESC`,
+    [userId]
+  );
+  return result.rows.map(row => {
+    const outfitStyleMetrics = row.outfit_style_metrics
+      ? ((typeof row.outfit_style_metrics === 'string'
+          ? JSON.parse(row.outfit_style_metrics)
+          : row.outfit_style_metrics) as StyleMetrics)
+      : null;
+
+    return {
+      id: row.id,
+      itemIds: safeParseStringArray(row.item_ids),
+      itemTitles: safeParseStringArray(row.item_titles),
+      type: row.type,
+      feedback: row.feedback || undefined,
+      prompt: row.prompt || undefined,
+      createdAt: row.created_at,
+      styleMetrics: outfitStyleMetrics,
+      outfitId: row.outfit_id || undefined,
+      outfit: row.outfit_id
+        ? {
+            id: row.outfit_id,
+            itemIds: safeParseStringArray(row.outfit_item_ids),
+            itemTitles: safeParseStringArray(row.outfit_item_titles),
+            prompt: row.outfit_prompt || undefined,
+            notes: row.outfit_notes || undefined,
+            styleMetrics: outfitStyleMetrics,
+            createdAt: row.outfit_created_at || row.created_at,
+            saved: row.outfit_saved === true || row.outfit_saved === 1 || row.outfit_saved === 't',
+          }
+        : null,
+    };
+  });
 }
 
 export async function insertFeedback(userId: string, feedback: OutfitFeedback) {
   await query(
-    'INSERT INTO outfit_feedback (id, user_id, item_ids, item_titles, type, feedback, prompt, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+    'INSERT INTO outfit_feedback (id, user_id, outfit_id, item_ids, item_titles, type, feedback, prompt, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
     [
       feedback.id,
       userId,
+      feedback.outfitId || null,
       JSON.stringify(feedback.itemIds || []),
       JSON.stringify(feedback.itemTitles || []),
       feedback.type,
       feedback.feedback || null,
       feedback.prompt || null,
-      feedback.createdAt
+      feedback.createdAt,
     ]
   );
 }
 
 export async function deleteFeedback(feedbackId: string) {
   await query('DELETE FROM outfit_feedback WHERE id = $1', [feedbackId]);
+}
+
+export async function updateFeedbackOutfitRefs(feedbackId: string, outfitId: string, styleMetrics: StyleMetrics | null): Promise<void> {
+  await query(
+    'UPDATE outfit_feedback SET outfit_id = $2, style_metrics = $3 WHERE id = $1',
+    [feedbackId, outfitId, styleMetrics ? JSON.stringify(styleMetrics) : null]
+  );
 }
 
 export async function getExploreSuggestions(userId: string) {
@@ -1056,6 +1147,11 @@ function mapAdminGeneratedOutfitRow(row: any): AdminGeneratedOutfitRecord {
     evaluation: parseJsonObject(row.evaluation) as AdminGeneratedOutfitRecord['evaluation'],
     status: (row.status || 'pending') as AdminGeneratedOutfitRecord['status'],
     createdAt: row.created_at,
+    styleMetrics: row.style_metrics
+      ? ((typeof row.style_metrics === 'string'
+          ? JSON.parse(row.style_metrics)
+          : row.style_metrics) as StyleMetrics)
+      : null,
   };
 }
 
@@ -1118,7 +1214,7 @@ export async function insertAdminGeneratedOutfits(records: AdminGeneratedOutfitR
   const values: any[] = [];
   const placeholders = records
     .map((record, index) => {
-      const baseIndex = index * 11;
+      const baseIndex = index * 12;
       values.push(
         record.id,
         JSON.stringify(record.itemIds),
@@ -1130,9 +1226,10 @@ export async function insertAdminGeneratedOutfits(records: AdminGeneratedOutfitR
         JSON.stringify(record.stylingSuggestions ?? []),
         record.evaluation ? JSON.stringify(record.evaluation) : null,
         record.status,
+        record.styleMetrics ? JSON.stringify(record.styleMetrics) : null,
         record.createdAt
       );
-      return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${baseIndex + 6}, $${baseIndex + 7}, $${baseIndex + 8}, $${baseIndex + 9}, $${baseIndex + 10}, $${baseIndex + 11})`;
+      return `($${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}, $${baseIndex + 4}, $${baseIndex + 5}, $${baseIndex + 6}, $${baseIndex + 7}, $${baseIndex + 8}, $${baseIndex + 9}, $${baseIndex + 10}, $${baseIndex + 11}, $${baseIndex + 12})`;
     })
     .join(', ');
 
@@ -1148,6 +1245,7 @@ export async function insertAdminGeneratedOutfits(records: AdminGeneratedOutfitR
       styling_suggestions,
       evaluation,
       status,
+      style_metrics,
       created_at
     ) VALUES ${placeholders}
     ON CONFLICT (id) DO UPDATE SET
@@ -1160,6 +1258,7 @@ export async function insertAdminGeneratedOutfits(records: AdminGeneratedOutfitR
       styling_suggestions = EXCLUDED.styling_suggestions,
       evaluation = EXCLUDED.evaluation,
       status = EXCLUDED.status,
+      style_metrics = EXCLUDED.style_metrics,
       created_at = EXCLUDED.created_at`,
     values
   );
@@ -1269,6 +1368,24 @@ export async function clearOutfitTrainingData(): Promise<void> {
 
 export async function deleteOutfitTrainingRecord(id: string): Promise<void> {
   await query('DELETE FROM outfit_training_data WHERE id = $1', [id]);
+}
+
+export async function updateSavedOutfitStyleMetrics(id: string, styleMetrics: StyleMetrics | null): Promise<void> {
+  await query('UPDATE saved_outfits SET style_metrics = $1 WHERE id = $2', [
+    styleMetrics ? JSON.stringify(styleMetrics) : null,
+    id,
+  ]);
+}
+
+export async function updateSavedOutfitSavedFlag(id: string, saved: boolean): Promise<void> {
+  await query('UPDATE saved_outfits SET saved = $1 WHERE id = $2', [saved, id]);
+}
+
+export async function updateAdminGeneratedOutfitStyleMetrics(id: string, styleMetrics: StyleMetrics | null): Promise<void> {
+  await query(
+    'UPDATE admin_generated_outfits SET style_metrics = $2 WHERE id = $1',
+    [id, styleMetrics ? JSON.stringify(styleMetrics) : null]
+  );
 }
 
 // Close database connection pool (call on shutdown)

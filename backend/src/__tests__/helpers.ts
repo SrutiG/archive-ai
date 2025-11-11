@@ -91,6 +91,8 @@ export async function seedTestData(userId: string) {
     prompt: 'Test outfit generation',
     notes: 'Test notes',
     createdAt: now,
+    styleMetrics: null,
+    saved: true,
   });
   
   return { items };

@@ -25,6 +25,8 @@ import {
   resolveSubCategory,
 } from './wardrobeSubcategories';
 import adminRouter from './adminRouter';
+import { computeMetricsFromWardrobeItems } from './styleMetrics';
+import type { StyleMetrics } from './styleMetricsTypes';
 
 // Initialize PostgreSQL schema if using PostgreSQL
 if (process.env.DATABASE_URL && typeof db.initializeSchema === 'function') {
@@ -468,6 +470,8 @@ export interface SavedOutfit {
   createdAt: string;
   prompt?: string; // Context/prompt used to generate this outfit
   notes?: string; // User's notes about the outfit
+  styleMetrics?: StyleMetrics | null;
+  saved: boolean;
 }
 
 // Outfit feedback interface
@@ -479,6 +483,9 @@ export interface OutfitFeedback {
   feedback?: string; // Optional user feedback text
   createdAt: string;
   prompt?: string; // The prompt used when this outfit was generated
+  styleMetrics?: StyleMetrics | null;
+  outfitId?: string;
+  outfit?: SavedOutfit | null;
 }
 
 // Explore suggestion interface
@@ -1539,6 +1546,7 @@ app.get('/api/outfits/saved', async (req, res) => {
 
         return fallbackTitles;
       })(),
+      saved: outfit.saved,
     }));
 
     res.json(cleanedOutfits);
@@ -1580,6 +1588,13 @@ app.post('/api/outfits/save', async (req, res) => {
     }
 
     const now = new Date().toISOString();
+    let styleMetrics: StyleMetrics | null = null;
+    if (req.body && typeof req.body.styleMetrics === 'object' && req.body.styleMetrics !== null) {
+      styleMetrics = req.body.styleMetrics as StyleMetrics;
+    } else {
+      styleMetrics = computeMetricsFromWardrobeItems(resolvedItems);
+    }
+
     const newOutfit: SavedOutfit = {
       id: uuidv4(),
       itemIds: resolvedItems.map(item => item.id),
@@ -1587,6 +1602,8 @@ app.post('/api/outfits/save', async (req, res) => {
       createdAt: now,
       prompt: prompt || undefined,
       notes: notes || undefined,
+      styleMetrics,
+      saved: true,
     };
 
     await db.insertSavedOutfit(userId, newOutfit);
@@ -1662,19 +1679,36 @@ app.post('/api/outfits/feedback', async (req, res) => {
       });
     }
 
-    const newFeedback: OutfitFeedback = {
+    const styleMetrics = computeMetricsFromWardrobeItems(resolvedItems);
+    const feedbackOutfit: SavedOutfit = {
       id: uuidv4(),
       itemIds: resolvedItems.map(item => item.id),
       itemTitles: resolvedItems.map(item => item.title),
-      type,
-      feedback: feedback || undefined,
       createdAt: new Date().toISOString(),
       prompt: prompt || undefined,
+      notes: undefined,
+      styleMetrics,
+      saved: false,
+    };
+
+    await db.insertSavedOutfit(userId, feedbackOutfit);
+
+    const newFeedback: OutfitFeedback = {
+      id: uuidv4(),
+      itemIds: [],
+      itemTitles: [],
+      type,
+      feedback: feedback || undefined,
+      createdAt: feedbackOutfit.createdAt,
+      prompt: prompt || undefined,
+      styleMetrics,
+      outfitId: feedbackOutfit.id,
+      outfit: feedbackOutfit,
     };
 
     await db.insertFeedback(userId, newFeedback);
 
-    console.log(`Saved ${type} feedback for outfit with ${newFeedback.itemIds.length} items for user ${userId}`);
+    console.log(`Saved ${type} feedback for outfit ${feedbackOutfit.id} (items=${feedbackOutfit.itemIds.length}, saved=${feedbackOutfit.saved}) for user ${userId}`);
     res.status(201).json(newFeedback);
   } catch (error) {
     console.error('Error saving feedback:', error);
@@ -1701,13 +1735,56 @@ app.get('/api/outfits/feedback', async (req, res) => {
     });
 
     const cleanedFeedback = (userData.outfitFeedback || []).map((entry: OutfitFeedback) => {
+      const outfit = entry.outfit;
+      if (outfit) {
+        const fallbackTitles = (outfit.itemTitles || []).map(title => {
+          const key = normalizeOutfitTitleKey(title);
+          return titleLookup.get(key) || formatQuickEntryTitle(title);
+        });
+
+        const itemIds = Array.isArray(outfit.itemIds)
+          ? outfit.itemIds.filter(id => typeof id === 'string' && id.trim().length > 0)
+          : [];
+
+        const itemTitles =
+          itemIds.length > 0
+            ? itemIds.map((id, index) => {
+                const item = itemsById.get(id);
+                if (item) {
+                  return item.title;
+                }
+                return (
+                  fallbackTitles[index] ||
+                  fallbackTitles.find(
+                    fallbackTitle =>
+                      normalizeOutfitTitleKey(fallbackTitle) ===
+                      normalizeOutfitTitleKey(outfit.itemTitles?.[index] ?? '')
+                  ) ||
+                  formatQuickEntryTitle(outfit.itemTitles?.[index] ?? `Item ${index + 1}`)
+                );
+              })
+            : fallbackTitles;
+
+        return {
+          ...entry,
+          itemIds,
+          itemTitles,
+          styleMetrics: entry.styleMetrics ?? outfit.styleMetrics ?? null,
+          outfit: {
+            ...outfit,
+            itemIds,
+            itemTitles,
+          },
+        };
+      }
+
       const fallbackTitles = (entry.itemTitles || []).map(title => {
         const key = normalizeOutfitTitleKey(title);
         return titleLookup.get(key) || formatQuickEntryTitle(title);
       });
 
       const itemIds = Array.isArray(entry.itemIds)
-        ? entry.itemIds.filter((id) => typeof id === 'string' && id.trim().length > 0)
+        ? entry.itemIds.filter(id => typeof id === 'string' && id.trim().length > 0)
         : [];
 
       const itemTitles =
@@ -1720,7 +1797,7 @@ app.get('/api/outfits/feedback', async (req, res) => {
               return (
                 fallbackTitles[index] ||
                 fallbackTitles.find(
-                  (fallbackTitle) =>
+                  fallbackTitle =>
                     normalizeOutfitTitleKey(fallbackTitle) ===
                     normalizeOutfitTitleKey(entry.itemTitles?.[index] ?? '')
                 ) ||
@@ -1830,7 +1907,7 @@ app.post('/api/explore/generate', async (req, res) => {
     }
 
     // Create ExploreSuggestion objects with IDs, images, and product links
-    const exploreSuggestionsWithIds: ExploreSuggestion[] = await Promise.all(
+    const exploreSuggestionsWithIds = await Promise.all(
       generatedSuggestions.map(async (suggestion: any) => {
         let imageUrl: string | undefined = suggestion.imageUrl;
         let productLink: string | undefined = suggestion.link;
@@ -1879,26 +1956,14 @@ app.post('/api/explore/generate', async (req, res) => {
           // Fallback to Unsplash if Pexels fails or no key
           if (!imageUrl) {
             imageUrl = `https://source.unsplash.com/400x400/?${encodeURIComponent(searchQuery + ' fashion')}`;
-            console.log(`↩️  Using Unsplash fallback for "${suggestion.title}"`);
+            console.log(`⚠️  Using Unsplash fallback for "${suggestion.title}" with query "${searchQuery}"`);
           }
-        }
-        
-        // Generate Google Shopping link if no link provided
-        if (!productLink || !productLink.startsWith('http')) {
-          productLink = `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(searchQuery)}`;
-          console.log(`Generated Google Shopping link for "${suggestion.title}"`);
         }
 
         return {
-          id: uuidv4(),
-          title: suggestion.title,
-          category: suggestion.category,
-          description: suggestion.description,
-          brand: suggestion.brand,
-          link: productLink,
-          pairsWellWith: suggestion.pairsWellWith,
-          imageUrl: imageUrl,
-          createdAt: new Date().toISOString()
+          ...suggestion,
+          imageUrl,
+          productLink,
         };
       })
     );

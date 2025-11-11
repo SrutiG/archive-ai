@@ -1,3 +1,5 @@
+import type { StyleMetrics } from './styleMetricsTypes';
+
 export type AdminFeedbackType = 'like' | 'dislike' | 'neutral';
 
 export interface AdminOutfitItemSummary {
@@ -91,5 +93,6 @@ export interface AdminGeneratedOutfitRecord {
   evaluation: AdminOutfitEvaluation | null;
   status: AdminGeneratedOutfitStatus;
   createdAt: string;
+  styleMetrics?: StyleMetrics | null;
 }
 

@@ -3,7 +3,9 @@
 // Provides a unified async interface for both
 
 import dotenv from 'dotenv';
-import type { SavedOutfit, OutfitFeedback } from './index';
+import type { SavedOutfit } from './index';
+import type { StyleMetrics } from './styleMetricsTypes';
+import type { OutfitFeedback } from './outfitFeedback';
 import type {
   AdminGeneratedOutfitRecord,
   AdminWardrobeItem,
@@ -153,6 +155,13 @@ export async function getSavedOutfits(userId: string) {
   return Promise.resolve(sqliteDb.getSavedOutfits(userId));
 }
 
+export async function getAllUserOutfits(userId: string) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.getAllUserOutfits(userId);
+  }
+  return Promise.resolve(sqliteDb.getAllUserOutfits(userId));
+}
+
 export async function insertSavedOutfit(userId: string, outfit: SavedOutfit) {
   if (USE_POSTGRES && pgDb) {
     return pgDb.insertSavedOutfit(userId, outfit);
@@ -186,6 +195,13 @@ export async function deleteFeedback(feedbackId: string) {
     return pgDb.deleteFeedback(feedbackId);
   }
   return Promise.resolve(sqliteDb.deleteFeedback(feedbackId));
+}
+
+export async function updateFeedbackOutfitRefs(feedbackId: string, outfitId: string, styleMetrics: StyleMetrics | null) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.updateFeedbackOutfitRefs(feedbackId, outfitId, styleMetrics);
+  }
+  return Promise.resolve(sqliteDb.updateFeedbackOutfitRefs(feedbackId, outfitId, styleMetrics));
 }
 
 export async function getExploreSuggestions(userId: string) {
@@ -325,4 +341,25 @@ export async function closeDatabase() {
     return pgDb.closeDatabase();
   }
   return Promise.resolve(sqliteDb.closeDatabase());
+}
+
+export async function updateSavedOutfitStyleMetrics(id: string, styleMetrics: StyleMetrics | null) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.updateSavedOutfitStyleMetrics(id, styleMetrics);
+  }
+  return Promise.resolve(sqliteDb.updateSavedOutfitStyleMetrics(id, styleMetrics));
+}
+
+export async function updateSavedOutfitSavedFlag(id: string, saved: boolean) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.updateSavedOutfitSavedFlag(id, saved);
+  }
+  return Promise.resolve(sqliteDb.updateSavedOutfitSavedFlag(id, saved));
+}
+
+export async function updateAdminGeneratedOutfitStyleMetrics(id: string, styleMetrics: StyleMetrics | null) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.updateAdminGeneratedOutfitStyleMetrics(id, styleMetrics);
+  }
+  return Promise.resolve(sqliteDb.updateAdminGeneratedOutfitStyleMetrics(id, styleMetrics));
 }

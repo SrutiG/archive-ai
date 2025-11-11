@@ -5,7 +5,6 @@ import fs from 'fs';
 import {
   WardrobeItem,
   UserProfile,
-  OutfitFeedback,
   ExploreSuggestion,
   SavedOutfit
 } from './index';
@@ -15,6 +14,15 @@ import {
   AdminWardrobeItem,
   OutfitTrainingRecord,
 } from './adminTypes';
+import {
+  type OutfitFeedback,
+  type FeedbackSignalSummary,
+  normalizeFeedbackSummaryPayload,
+  shouldPersistFeedbackSummary,
+  summarizeFeedbackSignals,
+  createItemTraitResolver,
+} from './outfitFeedback';
+import type { StyleMetrics } from './styleMetricsTypes';
 
 const DB_DIR = path.join(__dirname, '../data');
 const DB_FILE = path.join(DB_DIR, 'wardrobe.db');
@@ -102,6 +110,7 @@ db.exec(`
     styling_suggestions TEXT,
     evaluation TEXT,
     status TEXT NOT NULL,
+    style_metrics TEXT,
     created_at TEXT NOT NULL
   );
 
@@ -132,6 +141,8 @@ db.exec(`
     item_titles TEXT NOT NULL,
     prompt TEXT,
     notes TEXT,
+    style_metrics TEXT,
+    saved INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
@@ -139,13 +150,16 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS outfit_feedback (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
+    outfit_id TEXT,
     item_ids TEXT,
     item_titles TEXT NOT NULL,
     type TEXT NOT NULL,
     feedback TEXT,
     prompt TEXT,
+    style_metrics TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (outfit_id) REFERENCES saved_outfits(id) ON DELETE SET NULL
   );
 
   CREATE TABLE IF NOT EXISTS outfit_training_data (
@@ -262,17 +276,32 @@ try {
   if (!savedOutfitsColumns.includes('item_ids')) {
     db.exec('ALTER TABLE saved_outfits ADD COLUMN item_ids TEXT');
   }
+  if (!savedOutfitsColumns.includes('style_metrics')) {
+    db.exec('ALTER TABLE saved_outfits ADD COLUMN style_metrics TEXT');
+  }
+  if (!savedOutfitsColumns.includes('saved')) {
+    db.exec('ALTER TABLE saved_outfits ADD COLUMN saved INTEGER NOT NULL DEFAULT 0');
+  }
 
   const feedbackInfo = db.prepare("PRAGMA table_info(outfit_feedback)").all() as any[];
   const feedbackColumns = feedbackInfo.map(col => col.name);
   if (!feedbackColumns.includes('item_ids')) {
     db.exec('ALTER TABLE outfit_feedback ADD COLUMN item_ids TEXT');
   }
+  if (!feedbackColumns.includes('style_metrics')) {
+    db.exec('ALTER TABLE outfit_feedback ADD COLUMN style_metrics TEXT');
+  }
+  if (!feedbackColumns.includes('outfit_id')) {
+    db.exec('ALTER TABLE outfit_feedback ADD COLUMN outfit_id TEXT');
+  }
 
   const adminInfo = db.prepare("PRAGMA table_info(admin_wardrobe_items)").all() as any[];
   const adminColumns = adminInfo.map(col => col.name);
   if (!adminColumns.includes('pattern')) {
     db.exec('ALTER TABLE admin_wardrobe_items ADD COLUMN pattern TEXT');
+  }
+  if (!adminColumns.includes('style_metrics')) {
+    db.exec('ALTER TABLE admin_generated_outfits ADD COLUMN style_metrics TEXT');
   }
 } catch (error) {
   // Ignore errors if columns already exist or table doesn't exist
@@ -325,13 +354,26 @@ const stmts = {
   `),
   
   // Saved outfits
-  getSavedOutfits: db.prepare('SELECT * FROM saved_outfits WHERE user_id = ? ORDER BY created_at DESC'),
-  insertSavedOutfit: db.prepare('INSERT INTO saved_outfits (id, user_id, item_ids, item_titles, prompt, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+  getSavedOutfits: db.prepare('SELECT * FROM saved_outfits WHERE user_id = ? AND saved = 1 ORDER BY created_at DESC'),
+  insertSavedOutfit: db.prepare('INSERT INTO saved_outfits (id, user_id, item_ids, item_titles, prompt, notes, style_metrics, saved, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'),
   deleteSavedOutfit: db.prepare('DELETE FROM saved_outfits WHERE id = ?'),
   
   // Outfit feedback
-  getFeedback: db.prepare('SELECT * FROM outfit_feedback WHERE user_id = ? ORDER BY created_at DESC'),
-  insertFeedback: db.prepare('INSERT INTO outfit_feedback (id, user_id, item_ids, item_titles, type, feedback, prompt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
+  getFeedback: db.prepare(`
+    SELECT f.*, 
+           o.item_ids AS outfit_item_ids,
+           o.item_titles AS outfit_item_titles,
+           o.prompt AS outfit_prompt,
+           o.notes AS outfit_notes,
+           o.style_metrics AS outfit_style_metrics,
+           o.created_at AS outfit_created_at,
+           o.saved AS outfit_saved
+    FROM outfit_feedback f
+    LEFT JOIN saved_outfits o ON f.outfit_id = o.id
+    WHERE f.user_id = ?
+    ORDER BY f.created_at DESC
+  `),
+  insertFeedback: db.prepare('INSERT INTO outfit_feedback (id, user_id, outfit_id, item_ids, item_titles, type, feedback, prompt, style_metrics, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'),
   deleteFeedback: db.prepare('DELETE FROM outfit_feedback WHERE id = ?'),
   
   // Admin wardrobe items
@@ -356,8 +398,9 @@ const stmts = {
       styling_suggestions,
       evaluation,
       status,
+      style_metrics,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       item_ids = excluded.item_ids,
       item_titles = excluded.item_titles,
@@ -368,6 +411,7 @@ const stmts = {
       styling_suggestions = excluded.styling_suggestions,
       evaluation = excluded.evaluation,
       status = excluded.status,
+      style_metrics = excluded.style_metrics,
       created_at = excluded.created_at
   `),
   deleteAdminGeneratedOutfit: db.prepare('DELETE FROM admin_generated_outfits WHERE id = ?'),
@@ -604,6 +648,7 @@ function mapAdminGeneratedOutfitRow(row: any): AdminGeneratedOutfitRecord {
     stylingSuggestions: parseJsonArray<string>(row.styling_suggestions),
     evaluation: parseJsonObject(row.evaluation) as AdminGeneratedOutfitRecord['evaluation'],
     status: (row.status || 'pending') as AdminGeneratedOutfitRecord['status'],
+    styleMetrics: parseJsonObject(row.style_metrics) as StyleMetrics | null,
     createdAt: row.created_at,
   };
 }
@@ -913,7 +958,25 @@ export function getSavedOutfits(userId: string) {
     itemTitles: safeParseStringArray(row.item_titles),
     prompt: row.prompt || undefined,
     notes: row.notes || undefined,
-    createdAt: row.created_at
+    styleMetrics: parseJsonObject(row.style_metrics) as StyleMetrics | null,
+    createdAt: row.created_at,
+    saved: row.saved === 1 || row.saved === '1' || row.saved === true || row.saved === 't',
+  }));
+}
+
+export function getAllUserOutfits(userId: string) {
+  const rows = db
+    .prepare('SELECT * FROM saved_outfits WHERE user_id = ? ORDER BY created_at DESC')
+    .all(userId) as any[];
+  return rows.map(row => ({
+    id: row.id,
+    itemIds: safeParseStringArray(row.item_ids),
+    itemTitles: safeParseStringArray(row.item_titles),
+    prompt: row.prompt || undefined,
+    notes: row.notes || undefined,
+    styleMetrics: parseJsonObject(row.style_metrics) as StyleMetrics | null,
+    createdAt: row.created_at,
+    saved: row.saved === 1 || row.saved === '1' || row.saved === true || row.saved === 't',
   }));
 }
 
@@ -925,6 +988,8 @@ export function insertSavedOutfit(userId: string, outfit: SavedOutfit) {
     JSON.stringify(outfit.itemTitles || []),
     outfit.prompt || null,
     outfit.notes || null,
+    outfit.styleMetrics ? JSON.stringify(outfit.styleMetrics) : null,
+    outfit.saved ? 1 : 0,
     outfit.createdAt
   );
 }
@@ -942,7 +1007,21 @@ export function getFeedback(userId: string) {
     type: row.type,
     feedback: row.feedback || undefined,
     prompt: row.prompt || undefined,
-    createdAt: row.created_at
+    styleMetrics: parseJsonObject(row.style_metrics) as StyleMetrics | null,
+    createdAt: row.created_at,
+    outfitId: row.outfit_id || undefined,
+    outfit: row.outfit_id
+      ? {
+          id: row.outfit_id,
+          itemIds: safeParseStringArray(row.outfit_item_ids),
+          itemTitles: safeParseStringArray(row.outfit_item_titles),
+          prompt: row.outfit_prompt || undefined,
+          notes: row.outfit_notes || undefined,
+          styleMetrics: parseJsonObject(row.outfit_style_metrics) as StyleMetrics | null,
+          createdAt: row.outfit_created_at || row.created_at,
+          saved: Boolean(row.outfit_saved),
+        }
+      : null,
   }));
 }
 
@@ -950,17 +1029,27 @@ export function insertFeedback(userId: string, feedback: OutfitFeedback) {
   stmts.insertFeedback.run(
     feedback.id,
     userId,
+    feedback.outfitId || null,
     JSON.stringify(feedback.itemIds || []),
     JSON.stringify(feedback.itemTitles || []),
     feedback.type,
     feedback.feedback || null,
     feedback.prompt || null,
+    feedback.styleMetrics ? JSON.stringify(feedback.styleMetrics) : null,
     feedback.createdAt
   );
 }
 
 export function deleteFeedback(feedbackId: string) {
   stmts.deleteFeedback.run(feedbackId);
+}
+
+export function updateFeedbackOutfitRefs(feedbackId: string, outfitId: string, styleMetrics: StyleMetrics | null): void {
+  db.prepare('UPDATE outfit_feedback SET outfit_id = ?, style_metrics = ? WHERE id = ?').run(
+    outfitId,
+    styleMetrics ? JSON.stringify(styleMetrics) : null,
+    feedbackId
+  );
 }
 
 export function getAdminWardrobeItems(): AdminWardrobeItem[] {
@@ -1027,6 +1116,7 @@ export function insertAdminGeneratedOutfits(records: AdminGeneratedOutfitRecord[
         JSON.stringify(record.stylingSuggestions ?? []),
         record.evaluation ? JSON.stringify(record.evaluation) : null,
         record.status,
+        record.styleMetrics ? JSON.stringify(record.styleMetrics) : null,
         record.createdAt
       );
     });
@@ -1137,6 +1227,25 @@ export function getExploreUpdate(userId: string): string | null {
 
 export function upsertExploreUpdate(userId: string, lastUpdate: string) {
   stmts.upsertExploreUpdate.run(userId, lastUpdate);
+}
+
+export function updateSavedOutfitStyleMetrics(id: string, styleMetrics: StyleMetrics | null): void {
+  const stmt = db.prepare(
+    'UPDATE saved_outfits SET style_metrics = ? WHERE id = ?'
+  );
+  stmt.run(styleMetrics ? JSON.stringify(styleMetrics) : null, id);
+}
+
+export function updateSavedOutfitSavedFlag(id: string, saved: boolean): void {
+  const stmt = db.prepare('UPDATE saved_outfits SET saved = ? WHERE id = ?');
+  stmt.run(saved ? 1 : 0, id);
+}
+
+export function updateAdminGeneratedOutfitStyleMetrics(id: string, styleMetrics: StyleMetrics | null): void {
+  db.prepare('UPDATE admin_generated_outfits SET style_metrics = ? WHERE id = ?').run(
+    styleMetrics ? JSON.stringify(styleMetrics) : null,
+    id
+  );
 }
 
 // Close database connection (call on shutdown)

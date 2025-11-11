@@ -19,6 +19,8 @@ import {
 } from './adminTypes';
 import { getAdminOutfitRubric } from './adminRubric';
 import { resolveSubCategory } from './wardrobeSubcategories';
+import { computeMetricsFromWardrobeItems } from './styleMetrics';
+import type { StyleMetrics } from './styleMetricsTypes';
 
 dotenv.config();
 
@@ -984,6 +986,7 @@ export interface GeneratedOutfit {
   items: string[];
   justification: string;
   stylingSuggestions: string[];
+  styleMetrics?: StyleMetrics | null;
 }
 
 interface GenerateOutfitsOptions {
@@ -1522,6 +1525,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
             items: outfit.items || [],
             justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
             stylingSuggestions: outfit.stylingSuggestions || [],
+            styleMetrics: outfit.styleMetrics,
           };
         }
         if (Array.isArray(outfit)) {
@@ -1529,12 +1533,14 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
             items: outfit,
             justification: 'This combination creates a stylish and cohesive look.',
             stylingSuggestions: [],
+            styleMetrics: null,
           };
         }
         return {
           items: [],
           justification: 'This combination creates a stylish and cohesive look.',
           stylingSuggestions: [],
+          styleMetrics: null,
         };
       });
       console.log('[LLM] Parsed as direct array');
@@ -1545,6 +1551,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
             items: outfit.items || [],
             justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
             stylingSuggestions: outfit.stylingSuggestions || [],
+            styleMetrics: outfit.styleMetrics,
           };
         }
         if (Array.isArray(outfit)) {
@@ -1552,12 +1559,14 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
             items: outfit,
             justification: 'This combination creates a stylish and cohesive look.',
             stylingSuggestions: [],
+            styleMetrics: null,
           };
         }
         return {
           items: [],
           justification: 'This combination creates a stylish and cohesive look.',
           stylingSuggestions: [],
+          styleMetrics: null,
         };
       });
       console.log('[LLM] Parsed as object with outfits key');
@@ -1572,6 +1581,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
     outfits = outfits.map(outfit => {
       const canonicalTitles: string[] = [];
       const seen = new Set<string>();
+      const resolvedWardrobeItems: WardrobeItem[] = [];
       for (const title of outfit.items || []) {
         const item = allItemsMap.get(normalizeTitleKey(title));
         if (!item) {
@@ -1589,10 +1599,13 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
         }
         seen.add(key);
         canonicalTitles.push(canonicalTitle);
+        resolvedWardrobeItems.push(item);
       }
+      const styleMetrics = resolvedWardrobeItems.length > 0 ? computeMetricsFromWardrobeItems(resolvedWardrobeItems) : null;
       return {
         ...outfit,
         items: canonicalTitles,
+        styleMetrics,
       };
     });
 
@@ -2216,6 +2229,7 @@ function generateFallbackOutfits(
       items: uniqueItems,
       justification,
       stylingSuggestions: ['Mix and match layers, adjust proportions, and coordinate accessories for balance.'],
+      styleMetrics: null,
     });
   }
   

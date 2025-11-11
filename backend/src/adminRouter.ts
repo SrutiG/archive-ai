@@ -13,6 +13,8 @@ import {
 } from './adminTypes';
 import * as db from './database';
 import { generateOutfits, evaluateAdminOutfits } from './llmService';
+import { computeMetricsFromAdminItems } from './styleMetrics';
+import type { StyleMetrics } from './styleMetricsTypes';
 
 const MAX_ITEM_GENERATION = 200;
 const MAX_OUTFIT_REQUEST = 40;
@@ -311,6 +313,7 @@ adminRouter.post('/outfits/generate', async (req, res) => {
       stylingSuggestions: string[];
       evaluation: AdminOutfitEvaluation | null;
       status: 'pending';
+      styleMetrics?: StyleMetrics | null;
     };
 
     type ApprovedAdminOutfit = {
@@ -321,6 +324,7 @@ adminRouter.post('/outfits/generate', async (req, res) => {
       justification: string;
       stylingSuggestions: string[];
       evaluation: AdminOutfitEvaluation;
+      styleMetrics?: StyleMetrics | null;
     };
 
     const aggregatedOutfits: PendingAdminOutfit[] = [];
@@ -361,7 +365,7 @@ adminRouter.post('/outfits/generate', async (req, res) => {
 
       produced += generated.length;
 
-      const outfits = generated
+      const rawOutfits = generated
         .map(outfit => {
           const resolvedItems = outfit.items
             .map(title => {
@@ -376,36 +380,43 @@ adminRouter.post('/outfits/generate', async (req, res) => {
 
           const uniqueItems = Array.from(new Map(resolvedItems.map(item => [item.id, item])).values());
 
+          const itemSummaries = uniqueItems.map(item => ({
+            id: item.id,
+            title: item.title,
+            category: item.category,
+            subCategory: item.subCategory,
+            brand: item.brand,
+            colors: item.colors,
+            silhouettes: item.silhouettes,
+            pattern: item.pattern,
+            fit: item.fit,
+            formalities: item.formalities,
+            styleTags: item.styleTags,
+            seasons: item.seasons,
+            occasions: item.occasions,
+          }));
+
           return {
             id: uuidv4(),
             itemIds: uniqueItems.map(item => item.id),
             itemTitles: uniqueItems.map(item => item.title),
-            items: uniqueItems.map(item => ({
-              id: item.id,
-              title: item.title,
-              category: item.category,
-              subCategory: item.subCategory,
-              brand: item.brand,
-              colors: item.colors,
-              silhouettes: item.silhouettes,
-              pattern: item.pattern,
-              fit: item.fit,
-              formalities: item.formalities,
-              styleTags: item.styleTags,
-              seasons: item.seasons,
-              occasions: item.occasions,
-            })),
+            items: itemSummaries,
             justification: outfit.justification,
             stylingSuggestions: Array.isArray(outfit.stylingSuggestions) ? outfit.stylingSuggestions : [],
           };
         })
         .filter((outfit): outfit is NonNullable<typeof outfit> => outfit !== null);
 
-      if (!outfits.length) {
+      if (!rawOutfits.length) {
         continue;
       }
 
-      const candidates: AdminOutfitCandidate[] = outfits.map(outfit => ({
+      const outfits = rawOutfits.map(outfit => ({
+        ...outfit,
+        styleMetrics: computeMetricsFromAdminItems(outfit.items),
+      }));
+
+      const candidates: AdminOutfitCandidate[] = outfits.map(({ styleMetrics, ...outfit }) => ({
         ...outfit,
         prompt,
       }));
@@ -546,6 +557,7 @@ adminRouter.post('/outfits/generate', async (req, res) => {
       stylingSuggestions: outfit.stylingSuggestions,
       evaluation: outfit.evaluation ?? null,
       status: 'pending' as const,
+      styleMetrics: outfit.styleMetrics ?? null,
       createdAt: generationTimestamp,
     }));
 
