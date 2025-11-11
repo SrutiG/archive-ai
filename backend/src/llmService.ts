@@ -21,6 +21,7 @@ import { getAdminOutfitRubric } from './adminRubric';
 import { resolveSubCategory } from './wardrobeSubcategories';
 import { computeMetricsFromWardrobeItems } from './styleMetrics';
 import type { StyleMetrics } from './styleMetricsTypes';
+import type { FeedbackSignalSummary } from './outfitFeedback';
 
 dotenv.config();
 
@@ -999,6 +1000,7 @@ export async function generateOutfits(
   userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[]; hairColor?: string; hairTexture?: string; skinColor?: string },
   prompt?: string,
   feedback?: OutfitFeedback[],
+  feedbackSummary?: FeedbackSignalSummary | null,
   selectedItems?: WardrobeItem[],
   savedOutfits?: SavedOutfit[],
   userId?: string,
@@ -1221,9 +1223,6 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
           if (attributeSummary) {
             itemDesc += ` {${attributeSummary}}`;
           }
-          if (item.description) {
-            itemDesc += ` — ${item.description}`;
-          }
           if (item.measurements) {
             const measurementsStr = Object.entries(item.measurements)
               .filter(([_, v]) => v !== undefined && v !== null)
@@ -1240,8 +1239,9 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
       .join('\n');
     
     const totalItems = Object.values(itemsByCategory).flat().length;
-    console.log(`[LLM] Generating outfits from ${totalItems} items across ${Object.keys(itemsByCategory).length} categories`);
-    console.log(`[LLM] Items description length: ${itemsDescription.length} characters`);
+    console.log(
+      `[LLM] Generating outfits from ${totalItems} items across ${Object.keys(itemsByCategory).length} categories; items description length: ${itemsDescription.length} characters`
+    );
     
     // Build user profile context
     let userContext = '';
@@ -1359,8 +1359,7 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
       }
       
       if (feedbackParts.length > 0) {
-        feedbackContext = `User feedback on previous outfits: ${feedbackParts.join('. ')}. Use this feedback to generate better outfits that align with user preferences. `;
-        console.log(`[LLM] Including ${feedback.length} feedback entries (${likes.length} likes, ${dislikes.length} dislikes)`);
+        feedbackContext = `User feedback: ${feedbackParts.join('. ')}. `;
       }
     }
 
@@ -1372,13 +1371,18 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
       feedbackContext += ` Additional dislike notes to consider: ${dislikeInstructions.map(text => `"${text}"`).join(' ')}. Address these concerns through styling choices or complementary items rather than removing the referenced pieces outright.`;
     }
 
+    const summaryContext = formatFeedbackSummaryContext(feedbackSummary);
+    if (summaryContext) {
+      feedbackContext += ` ${summaryContext}`;
+    }
+
     // Build a list of all exact item titles for reference
     const allExactTitles = Object.values(itemsByCategory).flat().map(item => item.title).join(', ');
 
     console.log('[LLM] Calling OpenAI API for outfit generation...');
     const buildMessages = (): ChatCompletionMessageParam[] => [
-      {
-        role: 'system',
+        {
+          role: 'system',
         content: `You are a fashion stylist.${selectedList.length === 0 && anchorPlan.length > 0 ? ` These anchor pieces MUST appear in their respective outfits:
           ${anchorPlan.map((anchor, index) => {
             const anchorCategory = anchor.anchorItem.category || anchor.category;
@@ -1432,9 +1436,9 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
           - "stylingSuggestions": array of styling tips (e.g., ["wear blazer half buttoned", "wear hair in bun", "light makeup"])
           Example format: {"outfits": [{"items": ["Blue Shirt", "Black Jeans", "White Sneakers"], "justification": "This combination creates a casual yet polished look...", "stylingSuggestions": ["tuck in shirt", "cuff the sleeves"]}, ...]}
           Only return the JSON object, no other text. Every string in the JSON must use proper escaping (e.g., internal quotation marks as \\" and newline characters as \\n). Do NOT include unescaped quotation marks or control characters.`
-      },
-      {
-        role: 'user',
+        },
+        {
+          role: 'user',
         content: `${userContext}${selectedItemsContext}${anchorContext}${promptContext}${feedbackContext}${coreCategoryInstruction}${selectedList.length === 0 && anchorPlan.length > 0 ? `\n\nRemember: Outfit numbers ${anchorPlan.map((_, index) => index + 1).join(', ')} must include their anchor piece exactly as listed above.` : ''}\n\nGenerate outfit combinations from these items:\n${itemsDescription}\n\nCRITICAL REQUIREMENT - EXACT TITLE MATCHING: You MUST use the EXACT item titles as listed above. Do NOT modify, shorten, abbreviate, or paraphrase any item titles. Copy the titles EXACTLY as they appear in the wardrobe list above. For example, if the list shows "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" in your items array - NOT "Black Blazer", "Rick Owens Blazer", or any variation.\n\nHere are all available item titles for reference (use these EXACT titles only):\n${allExactTitles}\n\nVARIETY REQUIREMENT: Create VARIETY across the ${generationCount} outfits. Do NOT use the same item in every outfit unless:
 1. The user explicitly selected that item (then it MUST appear in all outfits)
 2. It's the only item available in that category (then it's acceptable to repeat)
@@ -1464,20 +1468,20 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
         );
         clearTimeout(timeout);
         responseDuration = Date.now() - attemptStart;
-
-        if (response.usage) {
+    
+    if (response.usage) {
           console.log(
             `[LLM] Token usage: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion = ${response.usage.total_tokens} total (attempt ${attempt})`
           );
-        }
+    }
         console.log(`[LLM] API call took ${responseDuration}ms (attempt ${attempt})`);
 
-        const content = response.choices[0]?.message?.content?.trim();
-        if (!content) {
-          throw new Error('No response from LLM');
-        }
-        console.log(`[LLM] Response length: ${content.length} characters`);
-
+    const content = response.choices[0]?.message?.content?.trim();
+    if (!content) {
+      throw new Error('No response from LLM');
+    }
+    console.log(`[LLM] Response length: ${content.length} characters`);
+    
         try {
           parsed = JSON.parse(content);
           break;
@@ -1518,62 +1522,62 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
     }
 
     let outfits: GeneratedOutfit[];
-    if (Array.isArray(parsed)) {
-      outfits = parsed.map((outfit: any) => {
-        if (typeof outfit === 'object' && outfit.items) {
-          return {
-            items: outfit.items || [],
-            justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
+      if (Array.isArray(parsed)) {
+        outfits = parsed.map((outfit: any) => {
+          if (typeof outfit === 'object' && outfit.items) {
+            return {
+              items: outfit.items || [],
+              justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
             stylingSuggestions: outfit.stylingSuggestions || [],
             styleMetrics: outfit.styleMetrics,
-          };
+            };
         }
         if (Array.isArray(outfit)) {
-          return {
-            items: outfit,
-            justification: 'This combination creates a stylish and cohesive look.',
+            return {
+              items: outfit,
+              justification: 'This combination creates a stylish and cohesive look.',
             stylingSuggestions: [],
             styleMetrics: null,
-          };
+            };
         }
-        return {
-          items: [],
-          justification: 'This combination creates a stylish and cohesive look.',
+            return {
+              items: [],
+              justification: 'This combination creates a stylish and cohesive look.',
           stylingSuggestions: [],
           styleMetrics: null,
-        };
-      });
-      console.log('[LLM] Parsed as direct array');
-    } else if (parsed.outfits && Array.isArray(parsed.outfits)) {
-      outfits = parsed.outfits.map((outfit: any) => {
-        if (typeof outfit === 'object' && outfit.items) {
-          return {
-            items: outfit.items || [],
-            justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
+            };
+        });
+        console.log('[LLM] Parsed as direct array');
+      } else if (parsed.outfits && Array.isArray(parsed.outfits)) {
+        outfits = parsed.outfits.map((outfit: any) => {
+          if (typeof outfit === 'object' && outfit.items) {
+            return {
+              items: outfit.items || [],
+              justification: outfit.justification || 'This combination creates a stylish and cohesive look.',
             stylingSuggestions: outfit.stylingSuggestions || [],
             styleMetrics: outfit.styleMetrics,
-          };
+            };
         }
         if (Array.isArray(outfit)) {
-          return {
-            items: outfit,
-            justification: 'This combination creates a stylish and cohesive look.',
+            return {
+              items: outfit,
+              justification: 'This combination creates a stylish and cohesive look.',
             stylingSuggestions: [],
             styleMetrics: null,
-          };
+            };
         }
-        return {
-          items: [],
-          justification: 'This combination creates a stylish and cohesive look.',
+            return {
+              items: [],
+              justification: 'This combination creates a stylish and cohesive look.',
           stylingSuggestions: [],
           styleMetrics: null,
-        };
-      });
-      console.log('[LLM] Parsed as object with outfits key');
-    } else {
-      throw new Error('Unexpected response format');
-    }
-    console.log(`[LLM] Successfully parsed ${outfits.length} outfits`);
+            };
+        });
+        console.log('[LLM] Parsed as object with outfits key');
+      } else {
+        throw new Error('Unexpected response format');
+      }
+      console.log(`[LLM] Successfully parsed ${outfits.length} outfits`);
 
     const allItemTitles = allItemsList.map(item => item.title);
     const beforeFilter = outfits.length;
@@ -1939,7 +1943,8 @@ export interface ExploreSuggestion {
 export async function generateExploreSuggestions(
   wardrobeItems: WardrobeItem[],
   userProfile?: { height?: number; weight?: number; heightUnit?: string; weightUnit?: string; stylePreferences?: string; brands?: string[]; hairColor?: string; hairTexture?: string; skinColor?: string },
-  feedback?: OutfitFeedback[]
+  feedback?: OutfitFeedback[],
+  feedbackSummary?: FeedbackSignalSummary | null
 ): Promise<ExploreSuggestion[]> {
   if (!openai) {
     console.warn('[LLM] OpenAI API key missing, skipping explore suggestions generation');
@@ -2022,6 +2027,11 @@ export async function generateExploreSuggestions(
       if (feedbackParts.length > 0) {
         feedbackContext = `User feedback: ${feedbackParts.join('. ')}. `;
       }
+    }
+
+    const summaryContext = formatFeedbackSummaryContext(feedbackSummary);
+    if (summaryContext) {
+      feedbackContext += ` ${summaryContext}`;
     }
 
     console.log('[LLM] Calling OpenAI API for explore suggestions...');
@@ -2558,3 +2568,61 @@ export const __test__ = {
   parseEvaluationResponse,
   assessOutfitStructure,
 };
+
+function formatFeedbackSummaryContext(summary?: FeedbackSignalSummary | null): string {
+  if (!summary) {
+    return '';
+  }
+
+  const sections: string[] = [];
+
+  const negative = (summary.negativeHighlights || [])
+    .slice(0, 3)
+    .map(stripHighlightPrefix)
+    .filter(Boolean);
+  if (negative.length > 0) {
+    sections.push(`Recurring dislikes: ${negative.join('; ')}`);
+  }
+
+  const positive = (summary.positiveHighlights || [])
+    .slice(0, 2)
+    .map(stripHighlightPrefix)
+    .filter(Boolean);
+  if (positive.length > 0) {
+    sections.push(`Reliable wins: ${positive.join('; ')}`);
+  }
+
+  const scenario = (summary.scenarioHighlights || [])
+    .slice(0, 2)
+    .map(stripHighlightPrefix)
+    .filter(Boolean);
+  if (scenario.length > 0) {
+    sections.push(`Scenario reminders: ${scenario.join('; ')}`);
+  }
+
+  const patternNotes: string[] = [];
+  if (summary.stylePatterns?.negative?.length) {
+    patternNotes.push(`Trouble spots: ${summary.stylePatterns.negative.slice(0, 1).join('; ')}`);
+  }
+  if (summary.stylePatterns?.mixed?.length) {
+    patternNotes.push(`Mixed reactions: ${summary.stylePatterns.mixed.slice(0, 1).join('; ')}`);
+  }
+  if (summary.stylePatterns?.positive?.length) {
+    patternNotes.push(`Hero combos: ${summary.stylePatterns.positive.slice(0, 1).join('; ')}`);
+  }
+  if (patternNotes.length > 0) {
+    sections.push(patternNotes.join(' '));
+  }
+
+  if (sections.length === 0) {
+    return '';
+  }
+
+  return `Feedback summary: ${sections.join(' | ')}.`;
+}
+
+const DIRECTIVE_KEYWORDS = ['no ', 'avoid', 'must', 'needs', 'need', "don't", 'do not', "can't", 'cannot', 'should', 'please'];
+
+function stripHighlightPrefix(highlight: string): string {
+  return highlight.replace(/^(likes|dislikes)\s*×?\d*[:\s-]*/i, '').trim();
+}

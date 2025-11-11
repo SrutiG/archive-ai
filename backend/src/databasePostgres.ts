@@ -14,6 +14,10 @@ import {
   OutfitTrainingRecord,
 } from './adminTypes';
 import type { StyleMetrics } from './styleMetricsTypes';
+import {
+  normalizeFeedbackSummaryPayload,
+  type FeedbackSignalSummary,
+} from './outfitFeedback';
 
 dotenv.config();
 
@@ -486,6 +490,13 @@ export async function initializeSchema(): Promise<void> {
       FOREIGN KEY (outfit_id) REFERENCES saved_outfits(id) ON DELETE SET NULL
     );
 
+    CREATE TABLE IF NOT EXISTS user_feedback_summary (
+      user_id TEXT PRIMARY KEY,
+      summary JSONB NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS explore_suggestions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -601,6 +612,12 @@ export async function initializeSchema(): Promise<void> {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'outfit_feedback' AND column_name = 'outfit_id') THEN
           ALTER TABLE outfit_feedback ADD COLUMN outfit_id TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_feedback_summary' AND column_name = 'summary') THEN
+          ALTER TABLE user_feedback_summary ADD COLUMN summary JSONB NOT NULL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'user_feedback_summary' AND column_name = 'updated_at') THEN
+          ALTER TABLE user_feedback_summary ADD COLUMN updated_at TEXT NOT NULL;
         END IF;
       END $$;
     `);
@@ -1010,12 +1027,36 @@ export async function getFeedback(userId: string) {
             prompt: row.outfit_prompt || undefined,
             notes: row.outfit_notes || undefined,
             styleMetrics: outfitStyleMetrics,
-            createdAt: row.outfit_created_at || row.created_at,
+            createdAt: row.outfit_created_at,
             saved: row.outfit_saved === true || row.outfit_saved === 1 || row.outfit_saved === 't',
           }
         : null,
     };
   });
+}
+
+export async function getFeedbackSummary(userId: string): Promise<FeedbackSignalSummary | null> {
+  const result = await query('SELECT summary FROM user_feedback_summary WHERE user_id = $1', [userId]);
+  if (result.rowCount === 0) {
+    return null;
+  }
+  const raw = result.rows[0].summary;
+  return normalizeFeedbackSummaryPayload(raw);
+}
+
+export async function upsertFeedbackSummary(userId: string, summary: FeedbackSignalSummary): Promise<void> {
+  const serialized = JSON.stringify(summary);
+  const updatedAt = new Date().toISOString();
+  await query(
+    `INSERT INTO user_feedback_summary (user_id, summary, updated_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id) DO UPDATE SET summary = EXCLUDED.summary, updated_at = EXCLUDED.updated_at`,
+    [userId, serialized, updatedAt]
+  );
+}
+
+export async function deleteFeedbackSummary(userId: string): Promise<void> {
+  await query('DELETE FROM user_feedback_summary WHERE user_id = $1', [userId]);
 }
 
 export async function insertFeedback(userId: string, feedback: OutfitFeedback) {

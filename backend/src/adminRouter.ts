@@ -350,6 +350,7 @@ adminRouter.post('/outfits/generate', async (req, res) => {
         undefined,
         prompt,
         undefined,
+        undefined,
         [],
         undefined,
         ADMIN_HISTORY_USER_ID,

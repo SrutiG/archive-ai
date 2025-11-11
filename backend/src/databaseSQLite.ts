@@ -162,6 +162,13 @@ db.exec(`
     FOREIGN KEY (outfit_id) REFERENCES saved_outfits(id) ON DELETE SET NULL
   );
 
+  CREATE TABLE IF NOT EXISTS user_feedback_summary (
+    user_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS outfit_training_data (
     id TEXT PRIMARY KEY,
     item_ids TEXT NOT NULL,
@@ -1023,6 +1030,28 @@ export function getFeedback(userId: string) {
         }
       : null,
   }));
+}
+
+export function getFeedbackSummary(userId: string): FeedbackSignalSummary | null {
+  const row = db.prepare('SELECT summary FROM user_feedback_summary WHERE user_id = ?').get(userId) as { summary?: unknown } | undefined;
+  if (!row || row.summary == null) {
+    return null;
+  }
+  return normalizeFeedbackSummaryPayload(row.summary);
+}
+
+export function upsertFeedbackSummary(userId: string, summary: FeedbackSignalSummary): void {
+  const payload = JSON.stringify(summary);
+  const updatedAt = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO user_feedback_summary (user_id, summary, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET summary = excluded.summary, updated_at = excluded.updated_at`
+  ).run(userId, payload, updatedAt);
+}
+
+export function deleteFeedbackSummary(userId: string): void {
+  db.prepare('DELETE FROM user_feedback_summary WHERE user_id = ?').run(userId);
 }
 
 export function insertFeedback(userId: string, feedback: OutfitFeedback) {

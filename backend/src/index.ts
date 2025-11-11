@@ -27,6 +27,12 @@ import {
 import adminRouter from './adminRouter';
 import { computeMetricsFromWardrobeItems } from './styleMetrics';
 import type { StyleMetrics } from './styleMetricsTypes';
+import {
+  summarizeFeedbackSignals,
+  defaultNormalizeTitleKey,
+  type OutfitFeedback as FeedbackSummaryEntry,
+  type FeedbackSignalSummary,
+} from './outfitFeedback';
 
 // Initialize PostgreSQL schema if using PostgreSQL
 if (process.env.DATABASE_URL && typeof db.initializeSchema === 'function') {
@@ -513,6 +519,11 @@ async function getUserData(userId: string) {
   const outfitFeedback = await db.getFeedback(userId);
   const exploreSuggestions = await db.getExploreSuggestions(userId);
   const lastExploreUpdate = await db.getExploreUpdate(userId);
+
+  let feedbackSummary = await db.getFeedbackSummary(userId);
+  if (!feedbackSummary) {
+    feedbackSummary = await rebuildFeedbackSummary(userId, outfitFeedback as FeedbackSummaryEntry[]);
+  }
   
   return {
     items,
@@ -521,9 +532,26 @@ async function getUserData(userId: string) {
     userProfile: profile || {},
     savedOutfits,
     outfitFeedback,
+    feedbackSummary,
     exploreSuggestions,
     lastExploreUpdate: lastExploreUpdate || ''
   };
+}
+
+async function rebuildFeedbackSummary(
+  userId: string,
+  existingFeedback?: FeedbackSummaryEntry[]
+): Promise<FeedbackSignalSummary | null> {
+  const feedbackEntries = existingFeedback ?? ((await db.getFeedback(userId)) as FeedbackSummaryEntry[]);
+  const summary = summarizeFeedbackSignals(feedbackEntries, defaultNormalizeTitleKey);
+
+  if (summary) {
+    await db.upsertFeedbackSummary(userId, summary);
+    return summary;
+  }
+
+  await db.deleteFeedbackSummary(userId);
+  return null;
 }
 
 // Middleware to extract user ID from request
@@ -1096,6 +1124,7 @@ app.post('/api/outfits/generate', async (req, res) => {
       userProfile,
       combinedPrompt,
       userData.outfitFeedback || [],
+      userData.feedbackSummary,
       selectedItems,
       userData.savedOutfits || [],
       userId
@@ -1708,6 +1737,8 @@ app.post('/api/outfits/feedback', async (req, res) => {
 
     await db.insertFeedback(userId, newFeedback);
 
+    await rebuildFeedbackSummary(userId);
+
     console.log(`Saved ${type} feedback for outfit ${feedbackOutfit.id} (items=${feedbackOutfit.itemIds.length}, saved=${feedbackOutfit.saved}) for user ${userId}`);
     res.status(201).json(newFeedback);
   } catch (error) {
@@ -1839,6 +1870,8 @@ app.delete('/api/outfits/feedback/:id', async (req, res) => {
 
     // Delete from database
     await db.deleteFeedback(id);
+
+    await rebuildFeedbackSummary(userId);
     
     console.log(`Deleted feedback: ${id} for user ${userId}`);
     res.json({ message: 'Feedback deleted successfully' });
@@ -1897,7 +1930,8 @@ app.post('/api/explore/generate', async (req, res) => {
     const generatedSuggestions = await generateExploreSuggestions(
       userData.items,
       userData.userProfile || {},
-      userData.outfitFeedback || []
+      userData.outfitFeedback || [],
+      userData.feedbackSummary
     );
 
     // Ensure uploads directory exists

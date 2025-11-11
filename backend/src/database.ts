@@ -5,7 +5,7 @@
 import dotenv from 'dotenv';
 import type { SavedOutfit } from './index';
 import type { StyleMetrics } from './styleMetricsTypes';
-import type { OutfitFeedback } from './outfitFeedback';
+import type { OutfitFeedback, FeedbackSignalSummary } from './outfitFeedback';
 import type {
   AdminGeneratedOutfitRecord,
   AdminWardrobeItem,
@@ -181,6 +181,27 @@ export async function getFeedback(userId: string) {
     return pgDb.getFeedback(userId);
   }
   return Promise.resolve(sqliteDb.getFeedback(userId));
+}
+
+export async function getFeedbackSummary(userId: string): Promise<FeedbackSignalSummary | null> {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.getFeedbackSummary(userId);
+  }
+  return Promise.resolve(sqliteDb.getFeedbackSummary(userId));
+}
+
+export async function upsertFeedbackSummary(userId: string, summary: FeedbackSignalSummary) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.upsertFeedbackSummary(userId, summary);
+  }
+  return Promise.resolve(sqliteDb.upsertFeedbackSummary(userId, summary));
+}
+
+export async function deleteFeedbackSummary(userId: string) {
+  if (USE_POSTGRES && pgDb) {
+    return pgDb.deleteFeedbackSummary(userId);
+  }
+  return Promise.resolve(sqliteDb.deleteFeedbackSummary(userId));
 }
 
 export async function insertFeedback(userId: string, feedback: OutfitFeedback) {
