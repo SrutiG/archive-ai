@@ -513,44 +513,55 @@ export function buildContextFilterSummary(
   return parts.join(' | ');
 }
 
+const ATTRIBUTE_ABBREVIATIONS: Record<string, string> = {
+  'Colors': 'clr',
+  'Fabrics': 'fbr',
+  'Pattern': 'pat',
+  'Silhouettes': 'sle',
+  'Silhouette': 'sle',
+  'Fit': 'fit',
+  'Formality': 'fml',
+  'Style Tags': 'stg',
+  'Seasons': 'sns',
+  'Occasions': 'occ',
+  'Brand': 'brd',
+};
+
 function buildItemAttributeSummary(item: WardrobeItem): string | null {
   const parts: string[] = [];
   if (item.colors && item.colors.length > 0) {
-    parts.push(`Colors: ${item.colors.join(', ')}`);
+    parts.push(`clr:${item.colors.join(',')}`);
   }
   if (item.fabrics && item.fabrics.length > 0) {
-    parts.push(`Fabrics: ${item.fabrics.join(', ')}`);
+    parts.push(`fbr:${item.fabrics.join(',')}`);
   }
   if (item.pattern) {
-    parts.push(`Pattern: ${item.pattern}`);
+    parts.push(`pat:${item.pattern}`);
   }
   if (item.silhouettes && item.silhouettes.length > 0) {
-    parts.push(`Silhouettes: ${item.silhouettes.join(', ')}`);
+    parts.push(`sle:${item.silhouettes.join(',')}`);
   } else if (item.silhouette) {
-    parts.push(`Silhouette: ${item.silhouette}`);
+    parts.push(`sle:${item.silhouette}`);
   }
   if (item.fit) {
-    parts.push(`Fit: ${item.fit}`);
+    parts.push(`fit:${item.fit}`);
   }
   if (item.formalities && item.formalities.length > 0) {
-    parts.push(`Formality: ${item.formalities.join(', ')}`);
+    parts.push(`fml:${item.formalities.join(',')}`);
   }
   if (item.styleTags && item.styleTags.length > 0) {
-    parts.push(`Style Tags: ${item.styleTags.join(', ')}`);
+    parts.push(`stg:${item.styleTags.join(',')}`);
   }
   if (item.seasons && item.seasons.length > 0) {
-    parts.push(`Seasons: ${item.seasons.join(', ')}`);
+    parts.push(`sns:${item.seasons.join(',')}`);
   }
   if (item.occasions && item.occasions.length > 0) {
-    parts.push(`Occasions: ${item.occasions.join(', ')}`);
+    parts.push(`occ:${item.occasions.join(',')}`);
   }
   if (item.brand) {
-    parts.push(`Brand: ${item.brand}`);
+    parts.push(`brd:${item.brand}`);
   }
-  if (item.careNotes) {
-    parts.push(`Care: ${item.careNotes}`);
-  }
-  return parts.length > 0 ? parts.join('; ') : null;
+  return parts.length > 0 ? parts.join(' ') : null;
 }
 
 const FEEDBACK_STOP_WORDS = new Set([
@@ -1068,28 +1079,6 @@ export async function generateOutfits(
 
   const selectedTitleKeys = new Set<string>(selectedList.map(item => normalizeTitleKey(item.title)));
 
-  const dislikedEntries = (feedback || []).filter(entry => entry.type === 'dislike');
-  const dislikeInstructions = dislikedEntries
-    .map(entry => (entry.feedback || '').trim())
-    .filter(Boolean);
-  const dislikedCombinationSummaries = dislikedEntries
-    .map(entry => {
-      const parts: string[] = [];
-      if (entry.prompt && entry.prompt.trim().length > 0) {
-        parts.push(`context: "${entry.prompt.trim()}"`);
-      }
-      if (entry.itemTitles.length > 0) {
-        parts.push(`items: ${entry.itemTitles.join(', ')}`);
-      }
-      if (entry.feedback && entry.feedback.trim().length > 0) {
-        parts.push(`note: ${entry.feedback.trim()}`);
-      }
-      if (parts.length === 0) {
-        return '';
-      }
-      return parts.join(' | ');
-    })
-    .filter(summary => summary.length > 0);
 
   const shouldAvoidTitle = (_title: string): boolean => false;
 
@@ -1223,15 +1212,6 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
           if (attributeSummary) {
             itemDesc += ` {${attributeSummary}}`;
           }
-          if (item.measurements) {
-            const measurementsStr = Object.entries(item.measurements)
-              .filter(([_, v]) => v !== undefined && v !== null)
-              .map(([k, v]) => `${k}: ${v}`)
-              .join(', ');
-            if (measurementsStr) {
-              itemDesc += ` [${measurementsStr}]`;
-            }
-          }
           return itemDesc;
         }).join(', ');
         return `${category}: ${itemsList}`;
@@ -1324,56 +1304,15 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
     // Add prompt context if provided
     let promptContext = '';
     if (prompt) {
-      promptContext = `Additional context: ${prompt}. `;
+      promptContext = `IMPORTANT USER REQUEST: ${prompt}. All generated outfits must be appropriate for this context. `;
       console.log(`[LLM] Generation prompt: ${prompt}`);
     }
 
-    // Add feedback context if provided
+    // Add feedback context from condensed summary
     let feedbackContext = '';
-    if (feedback && feedback.length > 0) {
-      const likes = feedback.filter(f => f.type === 'like');
-      const dislikes = feedback.filter(f => f.type === 'dislike');
-      
-      const feedbackParts: string[] = [];
-      
-      if (likes.length > 0) {
-        const likedItems = likes.map(f => {
-          let desc = f.itemTitles.join(', ');
-          if (f.feedback) {
-            desc += ` (user note: ${f.feedback})`;
-          }
-          return desc;
-        }).join('; ');
-        feedbackParts.push(`User liked these outfits: ${likedItems}`);
-      }
-      
-      if (dislikes.length > 0) {
-        const dislikedItems = dislikes.map(f => {
-          let desc = f.itemTitles.join(', ');
-          if (f.feedback) {
-            desc += ` (user note: ${f.feedback})`;
-          }
-          return desc;
-        }).join('; ');
-        feedbackParts.push(`User disliked these outfits: ${dislikedItems}`);
-      }
-      
-      if (feedbackParts.length > 0) {
-        feedbackContext = `User feedback: ${feedbackParts.join('. ')}. `;
-      }
-    }
-
-    if (dislikedCombinationSummaries.length > 0) {
-      feedbackContext += ` The user previously disliked these outfit combinations or scenarios: ${dislikedCombinationSummaries.join(' | ')}. Use this feedback to adjust pairings, styling, or supporting pieces while keeping the referenced items available for fresh interpretations.`;
-    }
-
-    if (dislikeInstructions.length > 0) {
-      feedbackContext += ` Additional dislike notes to consider: ${dislikeInstructions.map(text => `"${text}"`).join(' ')}. Address these concerns through styling choices or complementary items rather than removing the referenced pieces outright.`;
-    }
-
     const summaryContext = formatFeedbackSummaryContext(feedbackSummary);
     if (summaryContext) {
-      feedbackContext += ` ${summaryContext}`;
+      feedbackContext = summaryContext;
     }
 
     // Build a list of all exact item titles for reference
@@ -1393,6 +1332,8 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
           Each outfit can include up to 10 pieces. You can include multiple items from the same category (e.g., multiple jewelry pieces, multiple jacket layers). 
           Approach this as a visionary stylist who prefers interesting, risky, or unexpected styling choices about 70% of the time, provided they remain wearable and context-aware. Comfort and practicality matter, but when in doubt between a safe option and a compelling twist, favor the twist.
           Pay close attention to the user's style preferences and personal aesthetic when creating combinations.
+          
+          ATTRIBUTE ABBREVIATIONS: Item attributes use abbreviations to save space. Legend: clr=Colors, fbr=Fabrics, pat=Pattern, sle=Silhouette, fit=Fit, fml=Formality, stg=Style Tags, sns=Seasons, occ=Occasions, brd=Brand. Example: "Blue Shirt {clr:blue,white fit:relaxed fml:casual}" means a blue and white shirt with relaxed fit and casual formality.
           
           CRITICAL: You MUST use the EXACT item titles as provided in the wardrobe list. Do NOT modify, shorten, or paraphrase item titles. 
           For example, if the wardrobe has "Rick Owens Black Blazer", you must use exactly "Rick Owens Black Blazer" - NOT "Black Blazer" or "Rick Owens Blazer".
@@ -1443,11 +1384,29 @@ Do NOT mention to the user that any item was pre-selected as an anchor or that a
 1. The user explicitly selected that item (then it MUST appear in all outfits)
 2. It's the only item available in that category (then it's acceptable to repeat)
 
-Otherwise, vary the items across outfits - use different tops, different bottoms, different shoes, different outerwear, etc. Each outfit should feel unique and different from the others. Only repeat items if they were explicitly selected by the user or if there's only one option in that category.\n\nConsider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the ${generationCount} generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''}${exclusionRules} ${prompt ? 'Pay special attention to the additional context provided above.' : ''} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} ${anchorPlan.length > 0 ? 'For internal guidance only: keep the array order aligned with the anchor items listed above (Outfit 1 aligns with the first anchor, Outfit 2 with the second, etc.), include each anchor item, and highlight it as the hero piece without revealing that it was pre-selected.' : ''}Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly ${generationCount} outfit combinations. Remember: Use EXACT item titles from the list above - no modifications, abbreviations, or variations. Create VARIETY - do not repeat the same items across all outfits unless they were selected or are the only option. Escape any quotation marks inside strings by prefixing them with a backslash, and encode newline characters as \\n.`
+Otherwise, vary the items across outfits - use different tops, different bottoms, different shoes, different outerwear, etc. Each outfit should feel unique and different from the others. Only repeat items if they were explicitly selected by the user or if there's only one option in that category.\n\n${prompt ? `CRITICAL: The user specifically requested outfits for: "${prompt}". Every outfit's justification must explain how it fits this context, and styling suggestions should align with this occasion/context. ` : ''}Consider the user's body measurements, style preferences, and the detailed descriptions of each item when creating stylish and well-fitting outfit combinations that match their personal aesthetic. Each outfit can include up to 10 pieces and can include multiple items from the same category (e.g., multiple jewelry pieces, layered jackets). For each outfit, explain why you chose this combination and provide specific styling suggestions. ${selectedItems && selectedItems.length > 0 ? `MANDATORY: Every single one of the ${generationCount} generated outfits MUST include ALL of these selected items: ${selectedItems.map(i => i.title).join(', ')}. This is a requirement - do not generate any outfit that does not include all selected items.` : ''}${exclusionRules} ${feedback && feedback.length > 0 ? 'Use the user feedback to avoid creating similar outfits to ones they disliked and to create more outfits similar to ones they liked.' : ''} ${anchorPlan.length > 0 ? 'For internal guidance only: keep the array order aligned with the anchor items listed above (Outfit 1 aligns with the first anchor, Outfit 2 with the second, etc.), include each anchor item, and highlight it as the hero piece without revealing that it was pre-selected.' : ''}Return a JSON object with an "outfits" key containing an array of outfit objects, each with "items", "justification", and "stylingSuggestions". Generate exactly ${generationCount} outfit combinations. Remember: Use EXACT item titles from the list above - no modifications, abbreviations, or variations. Create VARIETY - do not repeat the same items across all outfits unless they were selected or are the only option. Escape any quotation marks inside strings by prefixing them with a backslash, and encode newline characters as \\n.`
       },
     ];
 
     let messages: ChatCompletionMessageParam[] = buildMessages();
+    const systemContent = typeof messages[0]?.content === 'string' ? messages[0].content : '';
+    const userContent = typeof messages[1]?.content === 'string' ? messages[1].content : '';
+    const totalContextLength = systemContent.length + userContent.length;
+    
+    console.log(`[LLM] Context breakdown:`);
+    console.log(`  System prompt: ${systemContent.length} chars (~${Math.ceil(systemContent.length / 4)} tokens)`);
+    console.log(`  User prompt: ${userContent.length} chars (~${Math.ceil(userContent.length / 4)} tokens)`);
+    console.log(`    - User context: ${userContext.length} chars`);
+    console.log(`    - Selected items: ${selectedItemsContext.length} chars`);
+    console.log(`    - Anchor context: ${anchorContext.length} chars`);
+    console.log(`    - Prompt context: ${promptContext.length} chars`);
+    console.log(`    - Feedback context: ${feedbackContext.length} chars`);
+    console.log(`    - Core category instruction: ${coreCategoryInstruction.length} chars`);
+    console.log(`    - Items description: ${itemsDescription.length} chars`);
+    console.log(`    - All exact titles: ${allExactTitles.length} chars`);
+    console.log(`    - Other instructions: ${userContent.length - userContext.length - selectedItemsContext.length - anchorContext.length - promptContext.length - feedbackContext.length - coreCategoryInstruction.length - itemsDescription.length - allExactTitles.length} chars`);
+    console.log(`  Total context: ${totalContextLength} chars (~${Math.ceil(totalContextLength / 4)} estimated tokens)`);
+    
     let parsed: any = null;
     let responseDuration = 0;
     const maxGenerationAttempts = 3;
