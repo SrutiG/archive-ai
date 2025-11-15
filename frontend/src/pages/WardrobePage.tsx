@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import './WardrobePage.css';
 import { WardrobeItem } from '../App';
-import ItemInput from '../components/ItemInput';
 import ItemList from '../components/ItemList';
 import { Button, PageHeader } from '../design-system';
 import { apiGet, apiPost } from '../utils/api';
 import { useUser } from '../contexts/UserContext';
-import EasyItemInputModal from '../components/EasyItemInputModal';
+import AddItemModal from '../components/AddItemModal';
 
 interface WardrobePageProps {
   apiUrl: string;
@@ -17,7 +16,7 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
   const [items, setItems] = useState<WardrobeItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [itemsLoading, setItemsLoading] = useState(false);
-  const [showQuickEntryModal, setShowQuickEntryModal] = useState(false);
+  const [showAddItemModal, setShowAddItemModal] = useState(false);
 
   const fetchItems = async () => {
     setItemsLoading(true);
@@ -68,17 +67,10 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
       />
 
       <div className="WardrobePage__actions">
-        <Button variant="secondary" size="medium" onClick={() => setShowQuickEntryModal(true)}>
-          Add items from text
+        <Button variant="primary" size="medium" onClick={() => setShowAddItemModal(true)}>
+          + Add Item
         </Button>
       </div>
-
-      <ItemInput 
-        onItemAdded={handleItemAdded} 
-        loading={loading}
-        setLoading={setLoading}
-        apiUrl={apiUrl}
-      />
       
       {itemsLoading ? (
         <div className="loading-container">
@@ -94,12 +86,13 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
         />
       )}
 
-      <EasyItemInputModal
-        isOpen={showQuickEntryModal}
-        onClose={() => setShowQuickEntryModal(false)}
-        onItemsCreated={() => {
-          fetchItems();
-        }}
+      <AddItemModal
+        isOpen={showAddItemModal}
+        onClose={() => setShowAddItemModal(false)}
+        onItemAdded={handleItemAdded}
+        apiUrl={apiUrl}
+        loading={loading}
+        setLoading={setLoading}
       />
     </div>
   );

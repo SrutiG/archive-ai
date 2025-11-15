@@ -221,7 +221,6 @@ const ItemInput: React.FC<ItemInputProps> = ({ onItemAdded, loading, setLoading,
 
   return (
     <div className="ItemInput">
-      <SectionHeader title="Add New Item" />
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label htmlFor="title">Item Title *</label>

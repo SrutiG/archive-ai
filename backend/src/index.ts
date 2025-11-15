@@ -33,6 +33,11 @@ import {
   type OutfitFeedback as FeedbackSummaryEntry,
   type FeedbackSignalSummary,
 } from './outfitFeedback';
+import {
+  searchProducts,
+  extractItemMetadata,
+  type ProductSearchResult,
+} from './productSearch';
 
 // Initialize PostgreSQL schema if using PostgreSQL
 if (process.env.DATABASE_URL && typeof db.initializeSchema === 'function') {
@@ -927,6 +932,134 @@ app.post('/api/items/batch', async (req, res) => {
   } catch (error) {
     console.error('Error creating items from quick entry:', error);
     res.status(500).json({ error: 'Failed to create wardrobe items from text.' });
+  }
+});
+
+// Search for products
+app.get('/api/products/search', async (req, res) => {
+  try {
+    const query = req.query.q as string;
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    // Optional: control Rakuten enrichment (default: true)
+    const enrich = req.query.enrich !== 'false';
+
+    console.log(`[ProductSearch] Searching for: "${query}" (enrich with Rakuten: ${enrich})`);
+    const results = await searchProducts(query.trim(), enrich);
+    
+    console.log(`[ProductSearch] Found ${results.length} results`);
+    res.json({ results, query: query.trim(), enriched: enrich });
+  } catch (error) {
+    console.error('[ProductSearch] Error searching products:', error);
+    res.status(500).json({ error: 'Failed to search products' });
+  }
+});
+
+// Add item from product search result
+app.post('/api/items/from-product', async (req, res) => {
+  try {
+    const userId = getUserFromRequest(req);
+    const { product, metadata } = req.body as {
+      product: ProductSearchResult;
+      metadata?: {
+        category?: string;
+        subCategory?: string;
+        colors?: string[];
+        fabrics?: string[];
+        pattern?: string;
+        silhouettes?: string[];
+        fit?: string;
+        formalities?: string[];
+        styleTags?: string[];
+        seasons?: string[];
+        occasions?: string[];
+        measurements?: Record<string, unknown>;
+      };
+    };
+
+    if (!product || !product.title) {
+      return res.status(400).json({ error: 'Product data is required' });
+    }
+
+    console.log(`[ProductSearch] Adding item from product: "${product.title}"`);
+    console.log(`[ProductSearch] Product imageUrl: ${product.imageUrl || 'MISSING'}`);
+
+    // Extract metadata if not provided
+    let extractedMetadata = metadata;
+    if (!extractedMetadata) {
+      console.log('[ProductSearch] Extracting metadata using LLM...');
+      extractedMetadata = await extractItemMetadata(
+        product.title,
+        product.description,
+        product.imageUrl
+      );
+    }
+
+    // Determine category - use extracted or product category, or default
+    const category = extractedMetadata?.category || product.category || 'Tops';
+    const resolvedSubCategory = resolveSubCategory(
+      category,
+      extractedMetadata?.subCategory,
+      product.title,
+      product.description
+    );
+
+    // Build the new item
+    const newItem: WardrobeItem = {
+      id: uuidv4(),
+      title: product.title,
+      ...(product.imageUrl && { imageUrl: product.imageUrl }),
+      category,
+      ...(resolvedSubCategory ? { subCategory: resolvedSubCategory } : {}),
+      ...(product.description && { description: product.description }),
+      ...(product.brand && { brand: product.brand as WardrobeBrandOption }),
+      ...(extractedMetadata?.colors && extractedMetadata.colors.length > 0
+        ? { colors: extractedMetadata.colors as WardrobeColorOption[] }
+        : {}),
+      ...(extractedMetadata?.fabrics && extractedMetadata.fabrics.length > 0
+        ? { fabrics: extractedMetadata.fabrics as WardrobeFabricOption[] }
+        : {}),
+      ...(extractedMetadata?.pattern
+        ? { pattern: extractedMetadata.pattern as WardrobePatternOption }
+        : {}),
+      ...(extractedMetadata?.silhouettes && extractedMetadata.silhouettes.length > 0
+        ? { silhouettes: extractedMetadata.silhouettes as WardrobeSilhouetteOption[] }
+        : {}),
+      ...(extractedMetadata?.silhouettes && extractedMetadata.silhouettes.length > 0
+        ? { silhouette: extractedMetadata.silhouettes[0] as WardrobeSilhouetteOption }
+        : {}),
+      ...(extractedMetadata?.fit
+        ? { fit: extractedMetadata.fit as WardrobeFitOption }
+        : {}),
+      ...(extractedMetadata?.formalities && extractedMetadata.formalities.length > 0
+        ? { formalities: extractedMetadata.formalities as WardrobeFormalityOption[] }
+        : {}),
+      ...(extractedMetadata?.styleTags && extractedMetadata.styleTags.length > 0
+        ? { styleTags: extractedMetadata.styleTags as WardrobeStyleTagOption[] }
+        : {}),
+      ...(extractedMetadata?.seasons && extractedMetadata.seasons.length > 0
+        ? { seasons: extractedMetadata.seasons as WardrobeSeasonOption[] }
+        : {}),
+      ...(extractedMetadata?.occasions && extractedMetadata.occasions.length > 0
+        ? { occasions: extractedMetadata.occasions as WardrobeOccasionOption[] }
+        : {}),
+      ...(extractedMetadata?.measurements
+        ? { measurements: extractedMetadata.measurements as WardrobeItem['measurements'] }
+        : {}),
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save to database
+    await db.insertItem(newItem, userId);
+
+    console.log(`[ProductSearch] Item created successfully: ${newItem.id}`);
+    console.log(`[ProductSearch] Saved item imageUrl: ${newItem.imageUrl || 'MISSING'}`);
+    res.status(201).json(newItem);
+  } catch (error) {
+    console.error('[ProductSearch] Error adding item from product:', error);
+    res.status(500).json({ error: 'Failed to add item from product' });
   }
 });
 
@@ -2033,6 +2166,10 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(`🎯 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing'}`);
     console.log(`📸 Pexels API Key: ${process.env.PEXELS_API_KEY ? '✅ Set' : '⚠️  Not set (will use Unsplash fallback)'}`);
+    console.log(`🔍 Product Search:`);
+    console.log(`   - Google Custom Search API: ${process.env.GOOGLE_SEARCH_API_KEY && process.env.GOOGLE_SEARCH_ENGINE_ID ? '✅ Set (PRIMARY - FREE, 100/day)' : '❌ Not set'}`);
+    console.log(`   - SerpAPI: ${process.env.SERPAPI_KEY ? '✅ Set (optional premium)' : '❌ Not set'}`);
+    console.log(`   - Etsy: ${process.env.ETSY_API_KEY ? '✅ Set' : '❌ Not set'}`);
     console.log('='.repeat(50));
   });
 }
