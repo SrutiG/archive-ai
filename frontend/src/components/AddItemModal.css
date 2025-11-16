@@ -60,6 +60,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
 }
 
 .add-item-modal-header {
@@ -74,36 +75,49 @@
 .add-item-modal-header h2 {
   margin: 0;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 700;
   color: #111827;
   flex: 1;
   text-align: center;
+  text-transform: none;
+  font-family: 'Playfair Display', serif;
+  letter-spacing: 0.03em;
 }
 
 .add-item-modal-back {
   background: none;
   border: none;
   font-size: 1rem;
-  color: #3b82f6;
+  color: #111827;
   cursor: pointer;
   padding: 0.5rem;
   border-radius: 4px;
-  transition: background-color 0.2s;
+  transition: all 0.2s;
   position: absolute;
   left: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  text-transform: none;
+  font-family: 'Inter', sans-serif;
 }
 
 .add-item-modal-back:hover {
   background-color: #f3f4f6;
+  color: #111827;
+}
+
+.add-item-modal-back svg {
+  font-size: 1.25rem;
+  color: inherit;
 }
 
 .add-item-modal-close {
   background: none;
   border: none;
-  font-size: 2rem;
   color: #6b7280;
   cursor: pointer;
-  padding: 0;
+  padding: 0.25rem;
   width: 32px;
   height: 32px;
   display: flex;
@@ -113,6 +127,11 @@
   transition: background-color 0.2s;
   position: absolute;
   right: 1.5rem;
+}
+
+.add-item-modal-close svg {
+  font-size: 1.5rem;
+  color: inherit;
 }
 
 .add-item-modal-close:hover {
@@ -142,10 +161,10 @@
 }
 
 .add-item-option:hover:not(:disabled) {
-  border-color: #3b82f6;
-  background-color: #f0f9ff;
+  border-color: #9ca3af;
+  background-color: #f9fafb;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .add-item-option:disabled {
@@ -154,8 +173,21 @@
 }
 
 .add-item-option-icon {
-  font-size: 2.5rem;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #374151;
+  transition: color 0.2s;
+}
+
+.add-item-option-icon svg {
+  font-size: 2.5rem;
+  color: inherit;
+}
+
+.add-item-option:hover:not(:disabled) .add-item-option-icon {
+  color: #111827;
 }
 
 .add-item-option-content {
@@ -165,8 +197,11 @@
 .add-item-option-content h3 {
   margin: 0 0 0.5rem 0;
   font-size: 1.25rem;
-  font-weight: 600;
+  font-weight: 700;
   color: #111827;
+  text-transform: none;
+  font-family: 'Playfair Display', serif;
+  letter-spacing: 0.03em;
 }
 
 .add-item-option-content p {
@@ -174,6 +209,8 @@
   font-size: 0.875rem;
   color: #6b7280;
   line-height: 1.5;
+  text-transform: none;
+  font-family: 'Inter', sans-serif;
 }
 
 .add-item-modal-content {
@@ -217,12 +254,107 @@
   border-radius: 0;
 }
 
+/* Override EasyItemInputModal overlay when inside AddItemModal */
+.add-item-modal-body .easy-item-modal-overlay {
+  position: relative;
+  inset: auto;
+  background: transparent;
+  display: block;
+  padding: 0;
+  z-index: auto;
+}
+
+.add-item-modal-body .easy-item-modal {
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  box-shadow: none;
+  max-height: none;
+  overflow: visible;
+}
+
+.add-item-modal-body .easy-item-modal__close {
+  display: none;
+}
+
+/* Override EasyItemInputModal fonts to match app style */
+.add-item-modal-body .easy-item-modal {
+  font-family: 'Inter', sans-serif;
+}
+
+.add-item-modal-body .easy-item-modal__label {
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.add-item-modal-body .easy-item-modal__char-count {
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.add-item-modal-body .easy-item-modal__result-title {
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.add-item-modal-body .easy-item-modal__result-meta {
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.add-item-modal-body .easy-item-modal__helper strong {
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+/* SectionHeader in EasyItemInputModal should use Playfair Display */
+.add-item-modal-body .easy-item-modal .section-heading,
+.add-item-modal-body .easy-item-modal h2,
+.add-item-modal-body .easy-item-modal h3 {
+  font-family: 'Playfair Display', serif !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.03em !important;
+  text-transform: none !important;
+}
+
 /* Override ItemInput when inside modal */
 .add-item-modal-body .ItemInput {
   padding: 0;
+  font-family: inherit;
 }
 
 .add-item-modal-body .ItemInput form {
   margin: 0;
+}
+
+/* Override ItemInput fonts to match app style */
+.add-item-modal-body .ItemInput {
+  font-family: 'Inter', sans-serif;
+}
+
+.add-item-modal-body .ItemInput label {
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  font-family: 'Inter', sans-serif !important;
+}
+
+.add-item-modal-body .ItemInput h3,
+.add-item-modal-body .ItemInput h2,
+.add-item-modal-body .ItemInput .section-heading {
+  text-transform: none !important;
+  font-family: 'Playfair Display', serif !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.03em !important;
+}
+
+.add-item-modal-body .ItemInput input,
+.add-item-modal-body .ItemInput textarea,
+.add-item-modal-body .ItemInput select {
+  font-family: 'Inter', sans-serif !important;
 }
 

@@ -4,6 +4,12 @@ import ProductSearch, { ProductSearchResult } from './ProductSearch';
 import EasyItemInputModal from './EasyItemInputModal';
 import ItemInput from './ItemInput';
 import { apiPost } from '../utils/api';
+import SearchIcon from '@mui/icons-material/Search';
+import AddLinkIcon from '@mui/icons-material/AddLink';
+import DescriptionIcon from '@mui/icons-material/Description';
+import EditIcon from '@mui/icons-material/Edit';
+import CloseIcon from '@mui/icons-material/Close';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 interface AddItemModalProps {
   isOpen: boolean;
@@ -14,7 +20,7 @@ interface AddItemModalProps {
   setLoading: (loading: boolean) => void;
 }
 
-type AddMode = 'select' | 'search' | 'batch' | 'manual';
+type AddMode = 'select' | 'search' | 'batch' | 'manual' | 'link';
 
 const AddItemModal: React.FC<AddItemModalProps> = ({
   isOpen,
@@ -25,10 +31,12 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
   setLoading,
 }) => {
   const [mode, setMode] = useState<AddMode>('select');
+  const [loadingMessage, setLoadingMessage] = useState<string>('Adding item to wardrobe...');
 
   if (!isOpen) return null;
 
   const handleProductSelect = async (product: ProductSearchResult) => {
+    setLoadingMessage('Adding item to wardrobe...');
     setLoading(true);
     try {
       const response = await apiPost('/api/items/from-product', { product });
@@ -69,7 +77,7 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
       {loading && (
         <div className="add-item-modal-loading-overlay">
           <div className="add-item-modal-loading-spinner"></div>
-          <p>Adding item to wardrobe...</p>
+          <p>{loadingMessage}</p>
         </div>
       )}
       <div className="add-item-modal-container" onClick={(e) => e.stopPropagation()}>
@@ -77,7 +85,9 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
           <>
             <div className="add-item-modal-header">
               <h2>Add Item to Wardrobe</h2>
-              <button className="add-item-modal-close" onClick={onClose}>×</button>
+              <button className="add-item-modal-close" onClick={onClose}>
+                <CloseIcon />
+              </button>
             </div>
             <div className="add-item-modal-options">
               <button
@@ -85,7 +95,9 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
                 onClick={() => setMode('search')}
                 disabled={loading}
               >
-                <div className="add-item-option-icon">🔍</div>
+                <div className="add-item-option-icon">
+                  <SearchIcon />
+                </div>
                 <div className="add-item-option-content">
                   <h3>Search Products</h3>
                   <p>Search for products online and add them with automatic metadata</p>
@@ -93,10 +105,25 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
               </button>
               <button
                 className="add-item-option"
+                onClick={() => setMode('link')}
+                disabled={loading}
+              >
+                <div className="add-item-option-icon">
+                  <AddLinkIcon />
+                </div>
+                <div className="add-item-option-content">
+                  <h3>Add from Link</h3>
+                  <p>Paste a product URL, preview details, then confirm</p>
+                </div>
+              </button>
+              <button
+                className="add-item-option"
                 onClick={() => setMode('batch')}
                 disabled={loading}
               >
-                <div className="add-item-option-icon">📝</div>
+                <div className="add-item-option-icon">
+                  <DescriptionIcon />
+                </div>
                 <div className="add-item-option-content">
                   <h3>Batch Text Input</h3>
                   <p>Paste a list of items and add multiple at once</p>
@@ -107,7 +134,9 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
                 onClick={() => setMode('manual')}
                 disabled={loading}
               >
-                <div className="add-item-option-icon">✏️</div>
+                <div className="add-item-option-icon">
+                  <EditIcon />
+                </div>
                 <div className="add-item-option-content">
                   <h3>Add Manually</h3>
                   <p>Fill out the form to add an item with all details</p>
@@ -121,10 +150,12 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
           <div className="add-item-modal-content">
             <div className="add-item-modal-header">
               <button className="add-item-modal-back" onClick={() => setMode('select')}>
-                ← Back
+                <ArrowBackIcon /> Back
               </button>
               <h2>Search Products</h2>
-              <button className="add-item-modal-close" onClick={onClose}>×</button>
+              <button className="add-item-modal-close" onClick={onClose}>
+                <CloseIcon />
+              </button>
             </div>
             <ProductSearch
               onSelectProduct={handleProductSelect}
@@ -137,10 +168,12 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
           <div className="add-item-modal-content">
             <div className="add-item-modal-header">
               <button className="add-item-modal-back" onClick={() => setMode('select')}>
-                ← Back
+                <ArrowBackIcon /> Back
               </button>
               <h2>Batch Text Input</h2>
-              <button className="add-item-modal-close" onClick={onClose}>×</button>
+              <button className="add-item-modal-close" onClick={onClose}>
+                <CloseIcon />
+              </button>
             </div>
             <div className="add-item-modal-body">
               <EasyItemInputModal
@@ -157,10 +190,12 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
           <div className="add-item-modal-content">
             <div className="add-item-modal-header">
               <button className="add-item-modal-back" onClick={() => setMode('select')}>
-                ← Back
+                <ArrowBackIcon /> Back
               </button>
               <h2>Add Item Manually</h2>
-              <button className="add-item-modal-close" onClick={onClose}>×</button>
+              <button className="add-item-modal-close" onClick={onClose}>
+                <CloseIcon />
+              </button>
             </div>
             <div className="add-item-modal-body">
               <ItemInput
@@ -172,10 +207,124 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
             </div>
           </div>
         )}
+
+        {mode === 'link' && (
+          <AddFromLink
+            onBack={() => setMode('select')}
+            onClose={onClose}
+            onSelectProduct={handleProductSelect}
+            loading={loading}
+            setLoading={setLoading}
+            setLoadingMessage={setLoadingMessage}
+          />
+        )}
       </div>
     </div>
   );
 };
 
 export default AddItemModal;
+
+interface AddFromLinkProps {
+  onBack: () => void;
+  onClose: () => void;
+  onSelectProduct: (p: ProductSearchResult) => void;
+  loading: boolean;
+  setLoading: (b: boolean) => void;
+  setLoadingMessage: (message: string) => void;
+}
+
+const AddFromLink: React.FC<AddFromLinkProps> = ({ onBack, onClose, onSelectProduct, loading, setLoading, setLoadingMessage }) => {
+  const [url, setUrl] = React.useState('');
+  const [product, setProduct] = React.useState<ProductSearchResult | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const handleFetch = async () => {
+    setError(null);
+    setProduct(null);
+    if (!url || !/^https?:\/\//i.test(url)) {
+      setError('Please enter a valid URL (http/https).');
+      return;
+    }
+    setLoadingMessage('Fetching product...');
+    setLoading(true);
+    try {
+      const resp = await apiPost('/api/products/ingest-url', { url });
+      if (!resp.ok) {
+        const data = await resp.json();
+        throw new Error(data.error || 'Failed to scrape product');
+      }
+      const data = await resp.json();
+      setProduct(data.product as ProductSearchResult);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to scrape product');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!product) return;
+    await onSelectProduct(product);
+  };
+
+  return (
+    <div className="add-item-modal-content">
+      <div className="add-item-modal-header">
+        <button className="add-item-modal-back" onClick={onBack}>
+          <ArrowBackIcon /> Back
+        </button>
+        <h2>Add from Link</h2>
+        <button className="add-item-modal-close" onClick={onClose}>
+          <CloseIcon />
+        </button>
+      </div>
+      <div className="add-item-modal-body">
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input
+            type="url"
+            placeholder="Paste product URL (e.g., https://everlane.com/...)"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            className="product-search-input"
+            disabled={loading}
+            style={{ flex: 1 }}
+          />
+          <button onClick={handleFetch} disabled={loading || !url}>Fetch</button>
+        </div>
+        {error && <div className="product-search-error" style={{ marginTop: 8 }}>{error}</div>}
+        {product && (
+          <div className="product-search-result" style={{ marginTop: 12 }}>
+            {product.imageUrl && (
+              <img
+                src={product.imageUrl}
+                alt={product.title}
+                className="product-search-result-image"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            )}
+            <div className="product-search-result-content">
+              <div className="product-search-result-title">
+                {product.brand && <span className="product-search-result-brand">{product.brand}</span>}
+                {product.title}
+              </div>
+              {product.description && (
+                <div className="product-search-result-description">
+                  {product.description.substring(0, 160)}{product.description.length > 160 ? '...' : ''}
+                </div>
+              )}
+              {product.colors && product.colors.length > 0 && (
+                <div className="product-search-result-tags">Colors: {product.colors.join(', ')}</div>
+              )}
+              <div style={{ marginTop: 8, display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center' }}>
+                <a href={product.productUrl} target="_blank" rel="noreferrer">Open link</a>
+                <button onClick={handleConfirm} disabled={loading}>Confirm & Add</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 

@@ -38,6 +38,7 @@ import {
   extractItemMetadata,
   type ProductSearchResult,
 } from './productSearch';
+import { scrapeProductFromUrl } from './productSearch';
 
 // Initialize PostgreSQL schema if using PostgreSQL
 if (process.env.DATABASE_URL && typeof db.initializeSchema === 'function') {
@@ -943,8 +944,8 @@ app.get('/api/products/search', async (req, res) => {
       return res.status(400).json({ error: 'Search query is required' });
     }
 
-    // Optional: control Rakuten enrichment (default: true)
-    const enrich = req.query.enrich !== 'false';
+    // Optional enrichment disabled for now
+    const enrich = false;
 
     console.log(`[ProductSearch] Searching for: "${query}" (enrich with Rakuten: ${enrich})`);
     const results = await searchProducts(query.trim(), enrich);
@@ -954,6 +955,27 @@ app.get('/api/products/search', async (req, res) => {
   } catch (error) {
     console.error('[ProductSearch] Error searching products:', error);
     res.status(500).json({ error: 'Failed to search products' });
+  }
+});
+
+// Ingest a product by URL - scrape and return structured product info
+app.post('/api/products/ingest-url', async (req, res) => {
+  try {
+    const { url } = req.body as { url?: string };
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return res.status(400).json({ error: 'Valid product URL is required' });
+    }
+
+    const result = await scrapeProductFromUrl(url);
+    if (!result) {
+      return res.status(422).json({ error: 'Failed to scrape product page' });
+    }
+
+    console.log(`[ProductIngest] Scraped: "${result.title}" - Image: ${result.imageUrl || 'MISSING'}`);
+    return res.json({ product: result });
+  } catch (error) {
+    console.error('[ProductIngest] Error ingesting product URL:', error);
+    return res.status(500).json({ error: 'Failed to ingest product from URL' });
   }
 });
 
@@ -1009,7 +1031,7 @@ app.post('/api/items/from-product', async (req, res) => {
     // Build the new item
     const newItem: WardrobeItem = {
       id: uuidv4(),
-      title: product.title,
+    title: product.title.length > 150 ? product.title.slice(0, 150) : product.title,
       ...(product.imageUrl && { imageUrl: product.imageUrl }),
       category,
       ...(resolvedSubCategory ? { subCategory: resolvedSubCategory } : {}),
