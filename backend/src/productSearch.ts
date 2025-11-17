@@ -249,6 +249,12 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           '--disable-gpu',
           '--disable-web-security',
           '--disable-features=IsolateOrigins,site-per-process',
+          // Disable HTTP/2 to avoid ERR_HTTP2_PROTOCOL_ERROR
+          '--disable-http2',
+          '--disable-quic',
+          // Additional stealth flags
+          '--disable-blink-features=AutomationControlled',
+          '--window-size=1920,1080',
         ],
       };
       
@@ -263,22 +269,45 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
       
       try {
         const page = await browser.newPage();
+        
+        // Set a realistic user agent
         await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
         await page.setViewport({ width: 1920, height: 1080 });
         
-        // Set timeout to 15 seconds (faster than before)
-        page.setDefaultNavigationTimeout(15000);
+        // Remove webdriver property to avoid detection
+        await page.evaluateOnNewDocument(() => {
+          // @ts-ignore - navigator exists in browser context
+          Object.defineProperty(navigator, 'webdriver', {
+            get: () => false,
+          });
+        });
+        
+        // Set additional headers to look more like a real browser
+        await page.setExtraHTTPHeaders({
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+        });
+        
+        // Set timeout to 30 seconds (increased for slow sites)
+        page.setDefaultNavigationTimeout(30000);
         
         console.log(`[ProductScrape] Navigating to ${productUrl}...`);
-        // Use load event - faster than networkidle, but still waits for page to render
-        await page.goto(productUrl, { waitUntil: 'load', timeout: 15000 });
+        // Use domcontentloaded instead of load - more reliable for JS-heavy sites
+        await page.goto(productUrl, { 
+          waitUntil: 'domcontentloaded', 
+          timeout: 30000,
+        });
         
-        // Wait a bit for any JavaScript to render content
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Wait longer for JavaScript-heavy sites to render content
+        // Banana Republic and similar sites need more time
+        await new Promise(resolve => setTimeout(resolve, 3000));
         
         // Try to wait for h1, but don't fail if it doesn't appear
         try {
-          await page.waitForSelector('h1', { timeout: 3000 });
+          await page.waitForSelector('h1', { timeout: 5000 });
           console.log(`[ProductScrape] h1 found`);
         } catch {
           console.log(`[ProductScrape] h1 not found immediately, but continuing...`);
