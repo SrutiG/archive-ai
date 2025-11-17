@@ -186,56 +186,36 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
   const usePuppeteer = async (): Promise<string | null> => {
     try {
       console.log(`[ProductScrape] Using browser automation for ${host}`);
-      const puppeteer = await import('puppeteer-core');
+      const puppeteer = await import('puppeteer');
       const fs = await import('fs');
-      const { execSync } = await import('child_process');
       
-      // Find Chrome/Chromium executable
-      // Prefer Chromium (lighter, faster) over Chrome
-      // On Render, Chromium is typically at /usr/bin/chromium
-      // On macOS, try Chromium first, then Chrome
-      let chromePath: string | undefined;
-      const possiblePaths = [
-        '/usr/bin/chromium',
-        '/usr/bin/chromium-browser',
-        '/usr/bin/google-chrome',
-        '/usr/bin/google-chrome-stable',
-        '/Applications/Chromium.app/Contents/MacOS/Chromium',
-        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-        process.env.CHROME_PATH,
-      ].filter(Boolean) as string[];
+      // On macOS, bundled Chromium may fail due to missing system frameworks
+      // Try to use system Chrome/Chromium first if available, fallback to bundled
+      let executablePath: string | undefined;
+      const isMac = process.platform === 'darwin';
       
-      for (const path of possiblePaths) {
-        try {
-          if (fs.existsSync(path)) {
-            chromePath = path;
-            console.log(`[ProductScrape] Found Chrome at: ${chromePath}`);
-            break;
+      if (isMac) {
+        const possiblePaths = [
+          '/Applications/Chromium.app/Contents/MacOS/Chromium',
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          process.env.CHROME_PATH,
+        ].filter(Boolean) as string[];
+        
+        for (const path of possiblePaths) {
+          try {
+            if (path && fs.existsSync(path)) {
+              executablePath = path;
+              console.log(`[ProductScrape] Using system Chrome at: ${executablePath}`);
+              break;
+            }
+          } catch {
+            // Continue searching
           }
-        } catch {
-          // Continue to next path
         }
       }
       
-      if (!chromePath) {
-        // Try to use system browser via which command (prefer Chromium)
-        try {
-          const whichResult = execSync('which chromium || which chromium-browser || which google-chrome', { encoding: 'utf-8' }).trim();
-          if (whichResult && fs.existsSync(whichResult)) {
-            chromePath = whichResult;
-            console.log(`[ProductScrape] Found browser via which: ${chromePath}`);
-          }
-        } catch {
-          // Ignore
-        }
-      }
-      
-      if (!chromePath) {
-        throw new Error('Chrome/Chromium not found. Please install Chrome or set CHROME_PATH environment variable.');
-      }
-      
-      const browser = await puppeteer.launch({
-        executablePath: chromePath,
+      // Use bundled Chromium if no system browser found (or on Linux/Render)
+      const launchOptions: any = {
         headless: true,
         args: [
           '--no-sandbox',
@@ -248,7 +228,16 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           '--disable-web-security',
           '--disable-features=IsolateOrigins,site-per-process',
         ],
-      });
+      };
+      
+      // Only set executablePath if we found a system browser (macOS fallback)
+      if (executablePath) {
+        launchOptions.executablePath = executablePath;
+      } else {
+        console.log(`[ProductScrape] Using Puppeteer's bundled Chromium (no system Chrome needed)`);
+      }
+      
+      const browser = await puppeteer.launch(launchOptions);
       
       try {
         const page = await browser.newPage();
