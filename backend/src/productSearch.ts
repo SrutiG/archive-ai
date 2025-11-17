@@ -1,6 +1,49 @@
 import OpenAI from 'openai';
+import type { Page } from 'puppeteer';
 
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+
+type PuppeteerModule = typeof import('puppeteer');
+type PuppeteerBrowser = Awaited<ReturnType<PuppeteerModule['launch']>>;
+
+const browserCache = new Map<string, Promise<PuppeteerBrowser>>();
+const browserCacheCleanups = new Map<string, () => void>();
+
+async function getSharedBrowser(
+  launchOptions: import('puppeteer').LaunchOptions & { args: string[] },
+  cacheLabel: string,
+): Promise<PuppeteerBrowser> {
+  const key = JSON.stringify({
+    headless: launchOptions.headless ?? true,
+    executablePath: launchOptions.executablePath || 'default',
+    args: launchOptions.args,
+  });
+
+  if (!browserCache.has(key)) {
+    const browserPromise = (async () => {
+      const puppeteer = await import('puppeteer');
+      console.log(`[ProductScrape] Launching shared browser (${cacheLabel})`);
+      const browser = await puppeteer.launch(launchOptions);
+
+      const cleanup = () => {
+        browser
+          .close()
+          .catch((err) => console.warn('[ProductScrape] Error closing shared browser:', err?.message || err));
+      };
+
+      browserCacheCleanups.set(key, cleanup);
+      process.once('exit', cleanup);
+      process.once('SIGINT', cleanup);
+      process.once('SIGTERM', cleanup);
+
+      return browser;
+    })();
+
+    browserCache.set(key, browserPromise);
+  }
+
+  return browserCache.get(key)!;
+}
 
 export interface ProductSearchResult {
   title: string;
@@ -270,7 +313,7 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
       }
       
       // Use bundled Chromium if no system browser found (or on Linux/Render)
-      const launchOptions: any = {
+      const launchOptions: import('puppeteer').LaunchOptions & { args: string[] } = {
         headless: true,
         args: browserArgs,
       };
@@ -282,21 +325,24 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
         console.log(`[ProductScrape] Using Puppeteer's bundled Chromium (no system Chrome needed)`);
       }
       
-      const browser = await puppeteer.launch(launchOptions);
+      const browser = await getSharedBrowser(launchOptions, executablePath ? 'system-chrome' : 'bundled-chromium');
       
-      try {
-        const page = await browser.newPage();
-        
-        // Block non-essential resources to speed up navigation and reduce load
-        await page.setRequestInterception(true);
-        page.on('request', (req) => {
+      let page: Page | null = null;
+      const requestHandler = (req: any) => {
           const type = req.resourceType();
           if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
             req.abort();
           } else {
             req.continue();
           }
-        });
+        };
+      
+      try {
+        page = await browser.newPage();
+        
+        // Block non-essential resources to speed up navigation and reduce load
+        await page.setRequestInterception(true);
+        page.on('request', requestHandler);
         
         // Set a realistic user agent
         await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -320,40 +366,16 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           'Cache-Control': 'no-cache',
         });
         
-        // Set timeout to 30 seconds (increased for slow sites)
-        page.setDefaultNavigationTimeout(30000);
-        
         console.log(`[ProductScrape] Navigating to ${normalizedUrl}...`);
-        const primaryGotoOptions = {
-          waitUntil: 'domcontentloaded' as const,
-          timeout: 20000,
-        };
-        const fallbackGotoOptions = {
-          waitUntil: 'networkidle2' as const,
-          timeout: 35000,
-        };
-        
-        let navigationSucceeded = false;
         try {
-          await page.goto(normalizedUrl, primaryGotoOptions);
-          navigationSucceeded = true;
+          await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded' });
         } catch (error) {
-          console.warn(`[ProductScrape] Primary navigation failed (${error instanceof Error ? error.message : error}). Retrying with networkidle2...`);
-          try {
-            await page.goto(normalizedUrl, fallbackGotoOptions);
-            navigationSucceeded = true;
-          } catch (fallbackError) {
-            console.error(`[ProductScrape] Fallback navigation also failed: ${fallbackError instanceof Error ? fallbackError.message : fallbackError}`);
-          }
-        }
-        
-        if (!navigationSucceeded) {
-          await browser.close();
-          throw new Error('navigation_failed');
+          console.error(`[ProductScrape] Navigation failed for ${normalizedUrl}:`, error instanceof Error ? error.message : error);
+          throw error;
         }
         
         // Ensure the DOM is available even if navigation events didn't fire as expected
-        await page.waitForSelector('body', { timeout: 5000 }).catch(() => {
+        await page.waitForSelector('body').catch(() => {
           console.warn('[ProductScrape] body selector not found after navigation, continuing anyway');
         });
         
@@ -381,10 +403,26 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           return elements.map((h) => (h.textContent || '').trim()).filter((t) => t.length > 0);
         });
         console.log(`[ProductScrape] Found h1 elements:`, h1s);
-        
-        await page.close();
       } finally {
-        await browser.close();
+        // Attempt to clean up page resources, but don't close shared browser
+        if (page) {
+          try {
+            page.off('request', requestHandler);
+          } catch {
+            // ignore
+          }
+
+          try {
+            if (!page.isClosed()) {
+              await page.setRequestInterception(false).catch(() => {});
+              await page.close().catch(() => {});
+            }
+          } catch {
+            // ignore cleanup errors
+          } finally {
+            page = null;
+          }
+        }
       }
       
       return html;
