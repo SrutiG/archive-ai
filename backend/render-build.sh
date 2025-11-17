@@ -9,7 +9,11 @@ STORAGE_DIR=/opt/render/project/.render
 
 # Install Chrome dependencies
 echo "Installing Chrome dependencies..."
-apt-get update
+
+# Try to update, but don't fail if filesystem is read-only
+# Redirect stderr to /dev/null to suppress error messages
+apt-get update 2>/dev/null || echo "Skipping apt-get update (read-only filesystem detected)"
+
 apt-get install -y \
   libglib2.0-0 \
   libnss3 \

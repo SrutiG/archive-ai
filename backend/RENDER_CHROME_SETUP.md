@@ -12,6 +12,8 @@ Simplest and fastest option. Add this to your **Build Command** in Render dashbo
 apt-get update && apt-get install -y chromium chromium-sandbox && npm install && npm run build
 ```
 
+**Note**: If you get a "read-only file system" error, use the build script instead (Option 2) which handles this gracefully.
+
 Set environment variable:
 ```
 CHROME_PATH=/usr/bin/chromium
@@ -24,7 +26,17 @@ CHROME_PATH=/usr/bin/chromium
 - ✅ All Puppeteer features available
 - ✅ No proprietary codecs needed for scraping
 
-## Option 2: Build Script with Chrome
+## Option 2: Build Script with Chromium (Recommended if Option 1 fails)
+
+Use the `render-build-chromium.sh` script (already included in your repo):
+
+1. In Render dashboard, set **Build Command** to: `bash render-build-chromium.sh`
+2. Set **Start Command** to: `npm start`
+3. Add environment variable: `CHROME_PATH=/usr/bin/chromium`
+
+This script handles read-only filesystem errors gracefully by skipping `apt-get update` if the filesystem is read-only.
+
+## Option 3: Build Script with Chrome
 
 Create a `render-build.sh` file in your `backend/` directory:
 
@@ -128,7 +140,11 @@ The scraper will automatically detect it.
 2. **Connect your repository**
 3. **Configure:**
    - **Environment**: `Node`
-   - **Build Command**: Use Option 1 (Chromium) or `bash render-build.sh` (Chrome)
+   - **Build Command**: 
+     - **Option A (Chromium - try this first)**: `apt-get update && apt-get install -y chromium chromium-sandbox && npm install && npm run build`
+     - **Option B (Chromium build script - use if Option A fails)**: `bash render-build-chromium.sh`
+     - **Option C (Skip update if read-only filesystem)**: `apt-get install -y --allow-unauthenticated chromium chromium-sandbox && npm install && npm run build`
+     - **Option D (Chrome build script)**: `bash render-build.sh`
    - **Start Command**: `npm start`
    - **Root Directory**: `backend`
 4. **Add Environment Variable:**
