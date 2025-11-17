@@ -191,8 +191,10 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
       
       // Configure cache directory for Render (persistent storage)
       // Render's persistent disk is at /opt/render/project/.render
+      // IMPORTANT: Set PUPPETEER_CACHE_DIR as an environment variable in Render dashboard
+      // so it's used during both build and runtime. If not set, use default location.
       const isRender = process.env.RENDER === 'true' || process.env.RENDER_SERVICE_ID !== undefined;
-      if (isRender) {
+      if (isRender && !process.env.PUPPETEER_CACHE_DIR) {
         const renderCacheDir = '/opt/render/project/.render/puppeteer-cache';
         try {
           // Ensure cache directory exists
@@ -205,6 +207,8 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
         } catch (error) {
           console.warn(`[ProductScrape] Could not create cache directory, using default:`, error);
         }
+      } else if (process.env.PUPPETEER_CACHE_DIR) {
+        console.log(`[ProductScrape] Using configured cache directory: ${process.env.PUPPETEER_CACHE_DIR}`);
       }
       
       // On macOS, bundled Chromium may fail due to missing system frameworks
