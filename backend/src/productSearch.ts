@@ -9,6 +9,53 @@ type PuppeteerBrowser = Awaited<ReturnType<PuppeteerModule['launch']>>;
 const browserCache = new Map<string, Promise<PuppeteerBrowser>>();
 const browserCacheCleanups = new Map<string, () => void>();
 
+function extractInlineSchemaProduct(rawHtml: string): any | null {
+  const marker = '{"@context":"https://schema.org","@type":"Product"';
+  const startIdx = rawHtml.indexOf(marker);
+  if (startIdx === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = startIdx; i < rawHtml.length; i++) {
+    const char = rawHtml[i];
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (!inString) {
+      if (char === '{') {
+        depth++;
+      } else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          const jsonString = rawHtml.slice(startIdx, i + 1);
+          try {
+            return JSON.parse(jsonString);
+          } catch (error) {
+            console.warn('[ProductScrape] Failed to parse inline schema product JSON:', error instanceof Error ? error.message : error);
+            return null;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 async function getSharedBrowser(
   launchOptions: import('puppeteer').LaunchOptions & { args: string[] },
   cacheLabel: string,
@@ -43,6 +90,26 @@ async function getSharedBrowser(
   }
 
   return browserCache.get(key)!;
+}
+
+async function fetchViaProxy(url: string): Promise<string | null> {
+  const proxyUrl = `https://r.jina.ai/${url}`;
+  try {
+    const res = await fetch(proxyUrl);
+    if (!res.ok) {
+      console.warn(`[ProductScrape] Proxy fetch failed (${res.status}) for ${url}`);
+      return null;
+    }
+    const text = await res.text();
+    const doctypeIdx = text.indexOf('<!DOCTYPE');
+    const htmlIdx = text.indexOf('<html');
+    if (doctypeIdx > -1) return text.slice(doctypeIdx);
+    if (htmlIdx > -1) return text.slice(htmlIdx);
+    return text;
+  } catch (error) {
+    console.warn('[ProductScrape] Proxy fetch error:', error instanceof Error ? error.message : error);
+    return null;
+  }
 }
 
 export interface ProductSearchResult {
@@ -128,6 +195,17 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
   const host = new URL(normalizedUrl).hostname.toLowerCase();
   
   // Helper function to check if HTML looks like it needs JavaScript rendering
+  const proxyFallbackHosts = new Set([
+    'bananarepublic.gap.com',
+    'www.bananarepublic.gap.com',
+    'oldnavy.gap.com',
+    'www.oldnavy.gap.com',
+    'gapfactory.com',
+    'www.gapfactory.com',
+    'gap.com',
+    'www.gap.com',
+  ]);
+
   const needsBrowserRendering = async (htmlContent: string): Promise<boolean> => {
     if (!htmlContent || htmlContent.length < 500) return true; // Too small, likely incomplete
     
@@ -367,6 +445,9 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
         });
         
         console.log(`[ProductScrape] Navigating to ${normalizedUrl}...`);
+        // Restore a safety timeout so Puppeteer doesn't hang forever
+        page.setDefaultNavigationTimeout(30000);
+        
         try {
           await page.goto(normalizedUrl, { waitUntil: 'domcontentloaded' });
         } catch (error) {
@@ -517,11 +598,24 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
     }
   }
   
+  if (!html && proxyFallbackHosts.has(host)) {
+    html = await fetchViaProxy(normalizedUrl);
+    if (html) {
+      console.log(`[ProductScrape] Using proxy fetch for ${host}`);
+    }
+  }
+  
   // Step 2: Check if the fetched HTML needs browser rendering
   // ONLY use Puppeteer if the HTML actually needs JS rendering - NOT for headers overflow
   if (html && await needsBrowserRendering(html)) {
     console.log(`[ProductScrape] Detected JavaScript-heavy page, falling back to Puppeteer`);
     html = await usePuppeteer();
+    if (!html && proxyFallbackHosts.has(host)) {
+      html = await fetchViaProxy(normalizedUrl);
+      if (html) {
+        console.log(`[ProductScrape] Puppeteer blocked; using proxy fetch for ${host}`);
+      }
+    }
   }
   
   // Step 3: If we still don't have HTML, try Puppeteer as last resort
@@ -529,9 +623,15 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
   if (!html && !headersOverflow) {
     console.log(`[ProductScrape] Regular fetch failed, trying Puppeteer as fallback`);
     html = await usePuppeteer();
+    if (!html && proxyFallbackHosts.has(host)) {
+      html = await fetchViaProxy(normalizedUrl);
+      if (html) {
+        console.log(`[ProductScrape] Puppeteer blocked; using proxy fetch for ${host}`);
+      }
+    }
     if (!html) {
       // If Puppeteer also failed, throw error
-      throw new Error('Failed to fetch HTML via both regular fetch and Puppeteer');
+      throw new Error('Failed to fetch HTML via regular fetch, Puppeteer, or proxy');
     }
   }
   
@@ -750,6 +850,45 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           if (!ldName && typeof (data?.name) === 'string') ldName = data.name;
         } catch {
           // ignore
+        }
+      }
+
+      // Inline schema.org Product JSON without type attribute (Gap Inc. Next.js streaming)
+      if (!ldName || !ldImage || !ldBrand) {
+        const inlineProduct = extractInlineSchemaProduct(html);
+        if (inlineProduct) {
+          console.log(`[ProductScrape] Found inline schema.org Product block for ${host}`);
+          if (!ldName && typeof inlineProduct.name === 'string') {
+            ldName = inlineProduct.name;
+          }
+          if (!ldImage) {
+            if (typeof inlineProduct.image === 'string') {
+              ldImage = resolveUrl(inlineProduct.image, productUrl);
+            } else if (Array.isArray(inlineProduct.image) && inlineProduct.image.length > 0) {
+              ldImage = resolveUrl(inlineProduct.image[0], productUrl);
+            } else if (inlineProduct.image && typeof inlineProduct.image === 'object') {
+              const imageObj = inlineProduct.image;
+              const imageUrl =
+                imageObj.url ||
+                imageObj['@id'] ||
+                imageObj.src ||
+                imageObj.PRIMARY ||
+                imageObj.VIEW_LARGE_IMAGE;
+              if (imageUrl && typeof imageUrl === 'string') {
+                ldImage = resolveUrl(imageUrl, productUrl);
+              }
+            }
+          }
+          if (!ldBrand) {
+            if (typeof inlineProduct.brand === 'string') {
+              ldBrand = inlineProduct.brand;
+            } else if (inlineProduct.brand && typeof inlineProduct.brand.name === 'string') {
+              ldBrand = inlineProduct.brand.name;
+            }
+          }
+          if (!ldColor && typeof inlineProduct.color === 'string') {
+            ldColor = inlineProduct.color;
+          }
         }
       }
     } catch {
