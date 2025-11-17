@@ -17,6 +17,15 @@ type Check = {
 
 const cases: Check[] = [
   {
+    url: 'https://bananarepublic.gap.com/browse/product.do?pid=8264920420004&vid=1&pcid=67595&cid=3049947&nav=meganav%3AWOMEN%3AWOMEN%27S+CLOTHING%3APants#pdp-page-content',
+    expects: {
+      titleIncludes: ['Mid-Rise', 'Relaxed', 'Painter', 'Pull-On', 'Pant'],
+      brandIncludes: ['banana', 'republic'],
+      requireImage: true,
+      colorIncludes: [],
+    },
+  },
+  {
     url: 'https://bananarepublic.gap.com/browse/product.do?pid=7135160124003&vid=3#pdp-page-content',
     expects: {
       // BR sometimes blocks bots; just assert brand for now
@@ -99,6 +108,96 @@ const cases: Check[] = [
       brandIncludes: ['bambou', 'roger', 'kwong'],
       requireImage: false,
       colorIncludes: ['gray', 'grey'],
+    },
+  },
+  {
+    url: 'https://oldnavy.gap.com/browse/product.do?pid=808887012&vid=1&tid=onns000009',
+    expects: {
+      titleIncludes: ['Fit', 'Flare', 'Puff', 'Sleeve', 'Midi', 'Dress'],
+      brandIncludes: ['old', 'navy'],
+      requireImage: false, // Gap Inc sites may block
+      colorIncludes: [],
+    },
+  },
+  {
+    url: 'https://www.loft.com/clothing/sweaters/catl000012/relaxed-everyday-sweater/778238.html?dwvar_778238_color=8791&dwvar_778238_size=500&currency=USD&country=US',
+    expects: {
+      titleIncludes: ['Relaxed', 'Everyday', 'Sweater'],
+      brandIncludes: ['loft'],
+      requireImage: false,
+      colorIncludes: [],
+    },
+  },
+  {
+    url: 'https://www2.hm.com/en_us/productpage.0983240057.html?srsltid=AfmBOoplMvjqpcxtKpKWlDE6fUia73vZ71XDUCi03uppzELvdBo',
+    expects: {
+      titleIncludes: ['Knit', 'Sweater'],
+      brandIncludes: ['h&m', 'hm'],
+      requireImage: false,
+      colorIncludes: [],
+    },
+  },
+  {
+    url: 'https://www.ae.com/us/en/p/aerie/bottoms/pants/aerie-street-trouser/0701_8540_021?menu=cat4840006&ip=off',
+    expects: {
+      titleIncludes: ['Street', 'Trouser'],
+      brandIncludes: ['aerie'],
+      requireImage: false,
+      colorIncludes: [],
+    },
+  },
+  {
+    url: 'https://www.gapfactory.com/browse/product.do?pid=822442001&vid=1&tid=gfns000002',
+    expects: {
+      titleIncludes: ['Seamed', 'Midi', 'Skirt'],
+      brandIncludes: ['gap'],
+      requireImage: false, // Gap Inc sites may block
+      colorIncludes: [],
+    },
+  },
+  {
+    url: 'https://www.macys.com/shop/product/style-co-petite-quilted-vest-created-for-macys?ID=18401640&pla_country=US&CAGPSPN=pla',
+    expects: {
+      titleIncludes: ['Quilted', 'Vest'],
+      brandIncludes: ['style', 'co'],
+      requireImage: false,
+      colorIncludes: [],
+    },
+  },
+  {
+    url: 'https://www.urbanoutfitters.com/shop/out-from-under-diana-layering-lace-trim-henley-top?color=056&size=M&type=STANDARD',
+    expects: {
+      titleIncludes: ['Diana', 'Layering', 'Lace', 'Henley', 'Top'],
+      brandIncludes: ['out', 'from', 'under'],
+      requireImage: false,
+      colorIncludes: [],
+    },
+  },
+  {
+    url: 'https://oldnavy.gap.com/browse/product.do?pid=791426002&vid=1&tid=onns000009',
+    expects: {
+      titleIncludes: ['High', 'Waisted', 'Taylor', 'Wide', 'Leg', 'Pants'],
+      brandIncludes: ['old', 'navy'],
+      requireImage: false, // Gap Inc sites may block
+      colorIncludes: [],
+    },
+  },
+  {
+    url: 'https://www.garageclothing.com/us/p/sleek-crewneck-long-sleeve-top/0938814.html?srsltid=AfmBOor_XOEkLwBZTV6fXp6QQERSIfY6TjkUzcjf0VZnke6JXmLKA',
+    expects: {
+      titleIncludes: ['Sleek', 'Crewneck', 'Long', 'Sleeve', 'Top'],
+      brandIncludes: ['garage'],
+      requireImage: false,
+      colorIncludes: [],
+    },
+  },
+  {
+    url: 'https://www.chicos.com/store/product/No-Iron-Novelty-Button-Tunic/570396059?color=6898&size=0%20(4/6-S)&srsltid=AfmBOoqAROj7cOTmkf5BHN2o-5uOpILhBbB4bjOgHGiqsHRgAUe02AjDKaQ',
+    expects: {
+      titleIncludes: ['No', 'Iron', 'Novelty', 'Button', 'Tunic'],
+      brandIncludes: ['chico'], // Brand is "Chico's" so check for "chico"
+      requireImage: false,
+      colorIncludes: [],
     },
   },
 ];

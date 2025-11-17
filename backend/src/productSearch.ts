@@ -79,10 +79,239 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
       lower.includes('pixel_') && lower.includes('akam'); // Gap Inc. specific
   };
   
-  try {
-    const doFetch = async (ua: string, retry: boolean = false): Promise<string | null> => {
+  const host = new URL(productUrl).hostname.toLowerCase();
+  
+  // Helper function to check if HTML looks like it needs JavaScript rendering
+  const needsBrowserRendering = async (htmlContent: string): Promise<boolean> => {
+    if (!htmlContent || htmlContent.length < 500) return true; // Too small, likely incomplete
+    
+    try {
+      const cheerio = await import('cheerio');
+      const $ = cheerio.load(htmlContent);
+      
+      // Check for h1 elements
+      const h1s = $('h1').map((_, el) => $(el).text().trim()).get().filter(t => t.length > 0);
+      
+      // If no h1s at all, check if there's meaningful content anyway
+      // Some sites use inline labels "Color: value" instead of separate elements
+      if (h1s.length === 0) {
+        const bodyText = $('body').text().trim();
+        const title = $('title').first().text().trim();
+        const ogTitle = $('meta[property="og:title"]').attr('content') || '';
+        const docTitle = title || ogTitle;
+        
+        // Check if title is just brand name (strong signal that Puppeteer is needed)
+        const hostBase = host.replace('www.', '').split('.')[0].toLowerCase();
+        const hostFull = host.replace('www.', '').toLowerCase();
+        const titleLower = docTitle.toLowerCase().trim();
+        
+        // Normalize both for comparison (remove spaces, special chars)
+        const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const titleNormalized = normalize(titleLower);
+        const hostBaseNormalized = normalize(hostBase);
+        const hostFullNormalized = normalize(hostFull);
+        
+        const isJustBrandName = titleNormalized === hostBaseNormalized || 
+                                titleNormalized === hostFullNormalized ||
+                                (titleLower.length < 20 && (titleLower.includes(hostBase) || titleLower.includes(hostFull.split('.')[0])));
+        
+        if (isJustBrandName) {
+          console.log(`[ProductScrape] No h1 and title is just brand name ("${docTitle}"), likely JS-rendered`);
+          return true; // Needs browser rendering
+        }
+        
+        // Check if body has substantial MEANINGFUL content (not just JS code)
+        // If HTML is large but text content is minimal, it's likely JS-rendered
+        const htmlLength = htmlContent.length;
+        const textLength = bodyText.length;
+        const textRatio = textLength / htmlLength;
+        
+        // If HTML is large (>100k) but text ratio is very low (<0.1), it's likely JS code, not rendered content
+        if (htmlLength > 100000 && textRatio < 0.1) {
+          console.log(`[ProductScrape] No h1, large HTML (${htmlLength} chars) but low text ratio (${textRatio.toFixed(3)}), likely JS-rendered`);
+          return true; // Needs browser rendering
+        }
+        
+        // Check if body has substantial text content (might be using inline labels)
+        if (bodyText.length > 500) {
+          // Has content, might just use inline labels - don't assume JS rendering needed
+          console.log(`[ProductScrape] No h1 but has content (${bodyText.length} chars), checking for inline labels`);
+          return false; // Try regular scraping first
+        }
+        console.log(`[ProductScrape] No h1 elements and minimal content, likely needs browser rendering`);
+        return true;
+      }
+      
+      // Check if title is meaningful (not just brand name or generic)
+      const title = $('title').first().text().trim();
+      const ogTitle = $('meta[property="og:title"]').attr('content') || '';
+      const h1Title = h1s[0] || '';
+      
+      // If title is very short or just brand name, might need browser
+      const isGenericTitle = title.length < 10 || 
+                            /^(home|store|shop|welcome|brand|product)$/i.test(title) ||
+                            title.toLowerCase() === host.split('.')[0].toLowerCase();
+      
+      // If h1 is just brand name, likely needs browser
+      const h1IsJustBrand = h1s.length > 0 && h1s.every(h1 => {
+        const lower = h1.toLowerCase();
+        const brandFromHost = host.split('.')[0].toLowerCase();
+        return lower === brandFromHost || lower.length < 10;
+      });
+      
+      if (isGenericTitle && h1IsJustBrand) {
+        console.log(`[ProductScrape] Generic title and brand-only h1s, likely needs browser rendering`);
+        return true;
+      }
+      
+      // Check if there's a lot of script tags but minimal visible content
+      const scriptCount = $('script').length;
+      const bodyText = $('body').text().trim();
+      const bodyTextLength = bodyText.length;
+      
+      // If many scripts but very little text content, likely JS-rendered
+      if (scriptCount > 10 && bodyTextLength < 500) {
+        console.log(`[ProductScrape] Many scripts (${scriptCount}) but little content (${bodyTextLength} chars), likely needs browser rendering`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.warn(`[ProductScrape] Error checking if browser needed:`, error);
+      return false; // If we can't check, assume regular fetch is fine
+    }
+  };
+  
+  // Helper function to use Puppeteer for browser automation
+  const usePuppeteer = async (): Promise<string | null> => {
+    try {
+      console.log(`[ProductScrape] Using browser automation for ${host}`);
+      const puppeteer = await import('puppeteer-core');
+      const fs = await import('fs');
+      const { execSync } = await import('child_process');
+      
+      // Find Chrome/Chromium executable
+      // Prefer Chromium (lighter, faster) over Chrome
+      // On Render, Chromium is typically at /usr/bin/chromium
+      // On macOS, try Chromium first, then Chrome
+      let chromePath: string | undefined;
+      const possiblePaths = [
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/google-chrome',
+        '/usr/bin/google-chrome-stable',
+        '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        process.env.CHROME_PATH,
+      ].filter(Boolean) as string[];
+      
+      for (const path of possiblePaths) {
+        try {
+          if (fs.existsSync(path)) {
+            chromePath = path;
+            console.log(`[ProductScrape] Found Chrome at: ${chromePath}`);
+            break;
+          }
+        } catch {
+          // Continue to next path
+        }
+      }
+      
+      if (!chromePath) {
+        // Try to use system browser via which command (prefer Chromium)
+        try {
+          const whichResult = execSync('which chromium || which chromium-browser || which google-chrome', { encoding: 'utf-8' }).trim();
+          if (whichResult && fs.existsSync(whichResult)) {
+            chromePath = whichResult;
+            console.log(`[ProductScrape] Found browser via which: ${chromePath}`);
+          }
+        } catch {
+          // Ignore
+        }
+      }
+      
+      if (!chromePath) {
+        throw new Error('Chrome/Chromium not found. Please install Chrome or set CHROME_PATH environment variable.');
+      }
+      
+      const browser = await puppeteer.launch({
+        executablePath: chromePath,
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--disable-gpu',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+        ],
+      });
+      
+      try {
+        const page = await browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        await page.setViewport({ width: 1920, height: 1080 });
+        
+        // Set timeout to 15 seconds (faster than before)
+        page.setDefaultNavigationTimeout(15000);
+        
+        console.log(`[ProductScrape] Navigating to ${productUrl}...`);
+        // Use load event - faster than networkidle, but still waits for page to render
+        await page.goto(productUrl, { waitUntil: 'load', timeout: 15000 });
+        
+        // Wait a bit for any JavaScript to render content
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Try to wait for h1, but don't fail if it doesn't appear
+        try {
+          await page.waitForSelector('h1', { timeout: 3000 });
+          console.log(`[ProductScrape] h1 found`);
+        } catch {
+          console.log(`[ProductScrape] h1 not found immediately, but continuing...`);
+        }
+        
+        // Get the rendered HTML
+        html = await page.content();
+        console.log(`[ProductScrape] Got HTML via browser (${html.length} chars)`);
+        
+        // Log what h1s we found for debugging (code runs in browser context)
+        const h1s = await page.evaluate(() => {
+          // @ts-ignore - this code runs in browser where document exists
+          const elements = Array.from(document.querySelectorAll('h1'));
+          // @ts-ignore
+          return elements.map((h) => (h.textContent || '').trim()).filter((t) => t.length > 0);
+        });
+        console.log(`[ProductScrape] Found h1 elements:`, h1s);
+        
+        await page.close();
+      } finally {
+        await browser.close();
+      }
+      
+      return html;
+    } catch (error) {
+      console.warn(`[ProductScrape] Browser automation failed:`, error instanceof Error ? error.message : error);
+      return null;
+    }
+  };
+  
+  // Step 1: Try regular fetch first
+  let html: string | null = null;
+  
+  const doFetch = async (ua: string, retry: boolean = false): Promise<string | null> => {
+    try {
+      // Create AbortController for 10-second timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 10000); // 10 seconds
+      
       try {
         const res = await fetch(productUrl, {
+          signal: controller.signal,
           headers: {
             'User-Agent': ua,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -96,44 +325,156 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
             'Sec-Fetch-Site': 'same-origin',
           },
         });
+        clearTimeout(timeoutId);
+        
         if (!res.ok) {
           console.warn(`[ProductScrape] HTTP ${res.status} for ${productUrl}`);
           return null;
         }
         return await res.text();
-      } catch (error: any) {
-        // Handle headers overflow (common with anti-bot)
-        if (error?.code === 'UND_ERR_HEADERS_OVERFLOW' || error?.message?.includes('Headers Overflow')) {
-          console.warn(`[ProductScrape] Headers overflow for ${productUrl} - likely anti-bot`);
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        
+        // Check if it was a timeout
+        if (fetchError?.name === 'AbortError' || controller.signal.aborted) {
+          console.warn(`[ProductScrape] Fetch timeout (10s) for ${productUrl}`);
           return null;
         }
-        throw error;
+        throw fetchError;
       }
-    };
-    let html =
+    } catch (error: any) {
+      // Handle headers overflow (common with anti-bot) - this means we should use Puppeteer
+      if (error?.code === 'UND_ERR_HEADERS_OVERFLOW' || error?.message?.includes('Headers Overflow')) {
+        console.warn(`[ProductScrape] Headers overflow for ${productUrl} - will use Puppeteer`);
+        return null; // Signal to use Puppeteer
+      }
+      throw error;
+    }
+  };
+  
+  // Try fetching with different user agents
+  let headersOverflow = false;
+  try {
+    html =
       (await doFetch('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')) ||
       (await doFetch('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36')) ||
       (await doFetch('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', true));
-    if (!html) {
-      // If fetch failed (403/410), try Google fallback before giving up
-      // This will be handled in the catch block, so we throw to trigger it
-      throw new Error('Fetch returned null (likely 403/410 anti-bot)');
+  } catch (error: any) {
+    // Check both the error itself and its cause property for headers overflow
+    const isHeadersOverflow = 
+      error?.code === 'UND_ERR_HEADERS_OVERFLOW' || 
+      error?.message?.includes('Headers Overflow') ||
+      error?.cause?.code === 'UND_ERR_HEADERS_OVERFLOW' ||
+      error?.cause?.name === 'HeadersOverflowError' ||
+      error?.cause?.message?.includes('Headers Overflow');
+    
+    if (isHeadersOverflow) {
+      console.warn(`[ProductScrape] Headers overflow detected, trying with minimal headers`);
+      headersOverflow = true;
+      // Try again with minimal headers (already tried in doFetch, but try one more time explicitly)
+      try {
+        html = await doFetch('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', true);
+      } catch {
+        // If minimal headers also fails, continue without HTML - will check if Puppeteer needed
+        html = null;
+      }
+    } else {
+      throw error;
     }
+  }
+  
+  // Step 2: Check if the fetched HTML needs browser rendering
+  // ONLY use Puppeteer if the HTML actually needs JS rendering - NOT for headers overflow
+  if (html && await needsBrowserRendering(html)) {
+    console.log(`[ProductScrape] Detected JavaScript-heavy page, falling back to Puppeteer`);
+    html = await usePuppeteer();
+  }
+  
+  // Step 3: If we still don't have HTML, try Puppeteer as last resort
+  // But NOT if headers overflow happened - headers overflow doesn't mean we need Puppeteer
+  if (!html && !headersOverflow) {
+    console.log(`[ProductScrape] Regular fetch failed, trying Puppeteer as fallback`);
+    html = await usePuppeteer();
+    if (!html) {
+      // If Puppeteer also failed, throw error
+      throw new Error('Failed to fetch HTML via both regular fetch and Puppeteer');
+    }
+  }
+  
+  // If headers overflow happened but we have no HTML, continue anyway - we'll extract from URL
+  if (headersOverflow && !html) {
+    console.log(`[ProductScrape] Headers overflow but no HTML - will extract from URL`);
+  }
+  
+  // Step 4: Validate response - check for error/maintenance/404 pages (AFTER Puppeteer if used)
+  if (html) {
+    const cheerio = await import('cheerio');
+    const $check = cheerio.load(html);
+    const bodyText = $check('body').text().trim();
+    const titleText = $check('title').text().trim().toLowerCase();
+    
+    // Check for error/maintenance pages
+    const errorIndicators = [
+      '404', 'not found', 'page not found',
+      'oh no, something went wrong',
+      'site is under maintenance',
+      'access denied',
+      'verify you are a human',
+      'blocked',
+      'access to this page has been denied',
+    ];
+    
+    const hasErrorIndicator = errorIndicators.some(indicator => 
+      titleText.includes(indicator) || bodyText.toLowerCase().includes(indicator)
+    );
+    
+    // If title itself is an error indicator, it's definitely an error page
+    const titleIsError = errorIndicators.some(indicator => 
+      titleText === indicator || titleText === `access denied` || titleText.includes('access denied')
+    );
+    
+    if (titleIsError) {
+      console.log(`[ProductScrape] Detected error page - title is error message: "${titleText}"`);
+      throw new Error('non_product_page');
+    }
+    
+    // Check if page has product-like content (heading or prices)
+    const hasH1 = $check('h1').length > 0;
+    const hasPrice = /\$\d/.test(bodyText);
+    const h1Text = hasH1 ? $check('h1').first().text().trim().toLowerCase() : '';
+    // H1 must be meaningful product content, not an error message
+    const hasProductHeading = hasH1 && h1Text.length > 5 && !errorIndicators.some(ind => h1Text.includes(ind));
+    
+    // If it's an error page and has no product content, return error
+    if (hasErrorIndicator && !hasProductHeading && !hasPrice) {
+      console.log(`[ProductScrape] Detected error page (${html.length} chars, title: "${titleText}")`);
+      throw new Error('non_product_page');
+    }
+  }
+  
+  try {
+    // If we have no HTML (e.g., headers overflow), extract from URL directly
+    if (!html) {
+      console.log(`[ProductScrape] No HTML available, extracting from URL only`);
+      // Extract from URL - this will be handled in the catch block
+      throw new Error('No HTML available - extracting from URL');
+    }
+    
     // Lazy import to avoid top-level dependency if unused
     const cheerio = await import('cheerio');
     const $ = cheerio.load(html);
 
-    // Prefer OpenGraph/Twitter/JSON-LD, with robust fallbacks (many retailers are sparse/JS-driven)
+    // STEP 2: Extract from Open Graph / meta tags (second priority after JSON-LD)
     const ogTitle = $('meta[property="og:title"]').attr('content') || '';
     const ogImage =
       $('meta[property="og:image:secure_url"]').attr('content')
       || $('meta[property="og:image"]').attr('content')
       || '';
     const ogDesc = $('meta[property="og:description"]').attr('content') || '';
+    const ogPrice = $('meta[property="product:price:amount"]').attr('content') || '';
     const twitterImage = $('meta[name="twitter:image"]').attr('content') || '';
     const linkImage = $('link[rel="image_src"]').attr('href') || '';
     const docTitle = $('title').first().text().trim();
-    const host = new URL(productUrl).hostname.toLowerCase();
 
     // Helper to resolve relative URLs to absolute
     const resolveUrl = (url: string, base: string): string => {
@@ -283,12 +624,225 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
 
     // Robust title fallback: use page h1 if OG/LD are generic
     const h1Title = ($('h1').first().text() || '').trim();
-    let title = (ldName || ogTitle || h1Title || docTitle || '').trim();
-    // Retailer-specific fixes: Banana Republic/GAP often set doc/og to brand name
-    if ((host.includes('gap.com') || host.includes('bananarepublic')) && /^banana\s*republic$/i.test(title)) {
-      // Prefer on-page h1 for PDP names
-      title = (h1Title || ldName || docTitle || title).trim();
+    
+    // Helper function to extract inline labels (e.g., "Color: Cosmic Pearl" from Hoka pages)
+    // This works for any site that uses "Label: value" format in plain text
+    const extractInlineLabel = (label: string): string | null => {
+      try {
+        // Get all text nodes from the DOM - check both element text and direct text nodes
+        const allTextNodes: string[] = [];
+        $('body *').each((_, el) => {
+          const text = $(el).text()?.trim() || '';
+          if (text && text.length > 0) {
+            allTextNodes.push(text);
+          }
+        });
+        
+        // Also check direct text content of body for inline patterns
+        const bodyText = $('body').text();
+        if (bodyText) {
+          // Split by newlines and check each line
+          const lines = bodyText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+          allTextNodes.push(...lines);
+        }
+        
+        // Find node/line that starts with the label (case-insensitive)
+        const labelLower = label.toLowerCase();
+        const matchingNode = allTextNodes.find(text => {
+          const textLower = text.toLowerCase().trim();
+          return textLower.startsWith(labelLower + ':');
+        });
+        
+        if (matchingNode) {
+          // Extract value after the colon
+          const parts = matchingNode.split(':');
+          if (parts.length > 1) {
+            const value = parts.slice(1).join(':').trim();
+            // Filter out CSS values (e.g., "white;", "var(--color-text-inverse);")
+            if (value.endsWith(';') || value.startsWith('var(') || value.startsWith('rgb(') || value.startsWith('#')) {
+              return null;
+            }
+            // Clean up common separators (e.g., "Cosmic Pearl / Cosmic Pearl" -> "Cosmic Pearl")
+            return value.split('/').map(v => v.trim()).filter(Boolean)[0] || value;
+          }
+        }
+        return null;
+      } catch (error) {
+        return null;
+      }
+    };
+    
+    // Helper to extract product name from headings/text (for sites without structured data)
+    const extractProductNameFromText = (): string | null => {
+      try {
+        // Try h1 first
+        const h1Text = $('h1').first().text()?.trim();
+        if (h1Text && h1Text.length > 5 && !h1Text.toLowerCase().includes(host.split('.')[0])) {
+          // Filter out promotional text
+          if (!h1Text.toLowerCase().includes('reward') && !h1Text.toLowerCase().includes('$10') && !h1Text.startsWith('$')) {
+            return h1Text;
+          }
+        }
+        
+        // Try other headings
+        const headings = $('h1, h2, h3').map((_, el) => $(el).text().trim()).get();
+        for (const heading of headings) {
+          if (heading && heading.length > 5 && !heading.toLowerCase().includes(host.split('.')[0])) {
+            // Filter out promotional text
+            if (heading.toLowerCase().includes('reward') || heading.toLowerCase().includes('$10') || heading.startsWith('$')) {
+              continue;
+            }
+            // Check if it looks like a product name (not just brand, has descriptive words)
+            const lower = heading.toLowerCase();
+            const productKeywords = ['transport', 'gtx', 'shoe', 'boot', 'sneaker', 'pant', 'shirt', 'dress', 'skirt', 'jacket', 'sweater', 'trouser', 'top', 'vest', 'tunic'];
+            if (productKeywords.some(kw => lower.includes(kw))) {
+              return heading;
+            }
+          }
+        }
+        
+        // For LOFT and Aerie specifically, try URL extraction first (more reliable than DOM)
+        if (host.includes('loft.com')) {
+          const urlObj = new URL(productUrl);
+          const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+          // Look for segments that look like product names (not numeric, not category codes)
+          const productSegments = pathSegments.filter(s => 
+            !/^\d+$/.test(s) && 
+            !/^catl\d+$/.test(s.toLowerCase()) &&
+            !['clothing', 'sweaters', 'html'].includes(s.toLowerCase()) &&
+            s.length > 5
+          );
+          if (productSegments.length > 0) {
+            const productName = productSegments[productSegments.length - 1];
+            const humanize = (s: string) =>
+              s.replace(/[-_]+/g, ' ')
+                .replace(/\b([a-z])/g, (_, c) => c.toUpperCase())
+                .trim();
+            return humanize(productName);
+          }
+        }
+        
+        // For Aerie specifically, try to find the product name in the URL path
+        if (host.includes('ae.com') || host.includes('aerie')) {
+          const urlObj = new URL(productUrl);
+          const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+          // Look for segments that look like product names (not numeric IDs)
+          const productSegments = pathSegments.filter(s => 
+            !/^\d+$/.test(s) && 
+            !/^\d{4}_\d{4}_\d{3}$/.test(s) &&
+            !['en', 'us', 'p', 'aerie', 'bottoms', 'pants', 'html'].includes(s.toLowerCase()) &&
+            s.length > 5
+          );
+          if (productSegments.length > 0) {
+            const productName = productSegments[productSegments.length - 1];
+            const humanize = (s: string) =>
+              s.replace(/[-_]+/g, ' ')
+                .replace(/\b([a-z])/g, (_, c) => c.toUpperCase())
+                .trim();
+            return humanize(productName);
+          }
+        }
+        
+        return null;
+      } catch (error) {
+        return null;
+      }
+    };
+    
+    // STEP 3: Extract from DOM text (third priority, after JSON-LD and Open Graph)
+    // Domain-agnostic extraction following priority: JSON-LD → Open Graph → DOM text
+    let title = '';
+    
+    // Priority 1: JSON-LD name
+    if (ldName && ldName.length > 5) {
+      title = ldName;
     }
+    // Priority 2: Open Graph title
+    else if (ogTitle && ogTitle.length > 5) {
+      title = ogTitle;
+    }
+    // Priority 3: First h1 in main content area
+    else {
+      const h1Title = ($('h1').first().text() || '').trim();
+      if (h1Title && h1Title.length > 5) {
+        title = h1Title;
+      }
+      // Priority 4: Document title
+      else if (docTitle && docTitle.length > 5) {
+        title = docTitle;
+      }
+    }
+    
+    // If title is generic (just brand name or domain), try to extract from DOM
+    const hostBase = host.replace('www.', '').split('.')[0];
+    const titleLower = title.toLowerCase();
+    const isGenericTitle = !title || 
+                          title.length < 5 || 
+                          titleLower === host || 
+                          titleLower === host.replace('www.', '') || 
+                          titleLower.includes(hostBase) ||
+                          titleLower === 'features' ||
+                          titleLower === 'description';
+    
+    if (isGenericTitle) {
+      // Try to find product name in DOM using generic selectors
+      const productNameSelectors = [
+        '[data-product-name]',
+        '.product-name',
+        '.product-title',
+        'h1.product-name',
+        '[class*="product"][class*="name"]',
+        '[class*="title"]',
+        'main h1',
+        '[role="main"] h1',
+      ];
+      
+      for (const selector of productNameSelectors) {
+        const found = $(selector).first().text()?.trim();
+        if (found && found.length > 5) {
+          const firstLine = found.split('\n')[0].trim();
+          const lowerLine = firstLine.toLowerCase();
+          // Filter out generic words, promotional text, and product IDs
+          if (!lowerLine.includes('reward') && 
+              !lowerLine.includes('$10') && 
+              !firstLine.startsWith('$') &&
+              !lowerLine.includes('features') &&
+              !lowerLine.includes('description') &&
+              !/^\d{4}_\d{4}_\d{3}$/.test(firstLine) &&
+              !/^\d+$/.test(firstLine) &&
+              firstLine.length > 5) {
+            title = firstLine;
+            console.log(`[ProductScrape] Found title via selector "${selector}": "${title}"`);
+            break;
+          }
+        }
+      }
+      
+      // If still generic, try to extract from URL path (domain-agnostic)
+      if (isGenericTitle || title.length < 5) {
+        const urlObj = new URL(productUrl);
+        const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+        // Find descriptive segments (not numeric, not generic, not file extensions)
+        const productSegments = pathSegments.filter(s => 
+          !/^\d+$/.test(s) && // Not purely numeric
+          !/\.html?$/i.test(s) && // Not .html files
+          !/^\d{4}_\d{4}_\d{3}$/.test(s) && // Not product IDs
+          !['en', 'us', 'html', 'shop', 'product', 'products', 'clothing', 'bottoms', 'pants', 'sweaters', 'gifts-for-running-lifestyle'].includes(s.toLowerCase()) &&
+          s.length > 3
+        );
+        if (productSegments.length > 0) {
+          const productName = productSegments[productSegments.length - 1];
+          const humanize = (s: string) =>
+            s.replace(/[-_]+/g, ' ')
+              .replace(/\b([a-z])/g, (_, c) => c.toUpperCase())
+              .trim();
+          title = humanize(productName);
+          console.log(`[ProductScrape] Extracted title from URL: "${title}"`);
+        }
+      }
+    }
+    
+    // Title extraction is now complete - domain-agnostic extraction above handles all cases
     const safeTitle = smartTruncateTitle(title, 150);
     
     // DOM image fallbacks (srcset/picture/noscript/data-* attributes)
@@ -415,22 +969,47 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
       $('meta[property="product:brand"]').attr('content') ||
       ldBrand ||
       new URL(productUrl).hostname.replace('www.', '').split('.')[0];
-    // Normalize common retailer brands
-    if (host.includes('bananarepublic') || host.includes('gap.com')) {
+    // Normalize common retailer brands - Gap Inc. brands
+    if (host.includes('bananarepublic.gap.com') || host === 'bananarepublic.com') {
       brand = 'Banana Republic';
+    } else if (host.includes('oldnavy.gap.com') || host === 'oldnavy.com') {
+      brand = 'Old Navy';
+    } else if (host.includes('gapfactory.com') || host.includes('gapfactory.gap.com')) {
+      brand = 'Gap Factory';
+    } else if (host.includes('gap.com') && !host.includes('oldnavy') && !host.includes('bananarepublic')) {
+      brand = 'Gap';
     } else if (host.includes('hoka.com')) {
       brand = 'Hoka';
     }
 
     // Attempt lightweight heuristic color extraction from title
+    // Note: extractInlineLabel is defined earlier in the function for use with Hoka title extraction
     const lowerTitle = title.toLowerCase() + ' ' + (description.toLowerCase() || '');
     const colorCandidates = [
       'black','white','ivory','cream','cream white','parchment','beige','tan','brown',
       'navy','blue','light blue','dark blue','green','olive','khaki','red','burgundy',
       'pink','blush','purple','lavender','yellow','mustard','orange','grey','gray','silver','gold',
-      'cream-white','off white','off-white'
+      'cream-white','off white','off-white', 'cosmic pearl', 'pearl'
     ];
     let colors = colorCandidates.filter(c => lowerTitle.includes(c));
+    
+    // Try inline label extraction for sites like Hoka (e.g., "Color: Cosmic Pearl")
+    // This works for any site that uses "Color: value" format in plain HTML text
+    if (!colors.length) {
+      // Try "Color:" first, then "Sale:" (some sites use "Sale: color name")
+      const inlineColor = extractInlineLabel('Color') || extractInlineLabel('Sale');
+      if (inlineColor) {
+        console.log(`[ProductScrape] Found color via inline label: "${inlineColor}"`);
+        // Normalize the color value
+        const normalizedColor = inlineColor.toLowerCase().trim();
+        // Extract first color if multiple (e.g., "Cosmic Pearl / Cosmic Pearl" -> "cosmic pearl")
+        const firstColor = normalizedColor.split('/').map(c => c.trim()).filter(Boolean)[0] || normalizedColor;
+        // If it matches a known color candidate, use that; otherwise use the extracted value
+        const matchedCandidate = colorCandidates.find(c => firstColor.includes(c) || c.includes(firstColor));
+        colors = matchedCandidate ? [matchedCandidate] : [firstColor];
+      }
+    }
+    
     if (!colors.length && ldColor) colors = [ldColor.toLowerCase()];
 
     // Heuristic category detection (fallback before LLM)
@@ -469,7 +1048,47 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           console.log(`[ProductScrape] Image missing/invalid, trying Google Custom Search fallback for: ${safeTitle || brand}`);
           
           // Build search query from title and brand (simple, no site restrictions)
-          const searchQuery = [brand, safeTitle].filter(Boolean).join(' ').trim();
+          // If title is just the brand name, don't duplicate it
+          let searchQuery = safeTitle || '';
+          // For Banana Republic, if title is just brand name, try to extract product name from URL or use a generic search
+          if ((host.includes('gap.com') || host.includes('bananarepublic')) && /^banana\s*republic$/i.test(searchQuery)) {
+            // Try to extract category from URL parameters (e.g., nav=meganav%3AWOMEN%3AWOMEN%27S+CLOTHING%3APants)
+            const urlObj = new URL(productUrl);
+            const navParam = urlObj.searchParams.get('nav');
+            let categoryFromUrl = '';
+            if (navParam) {
+              // Decode and extract category (e.g., "Pants" from "WOMEN'S CLOTHING:Pants")
+              const decoded = decodeURIComponent(navParam);
+              const parts = decoded.split(':');
+              if (parts.length > 1) {
+                categoryFromUrl = parts[parts.length - 1].toLowerCase();
+              }
+            }
+            
+            // Try to extract product name from URL path
+            const urlPath = new URL(productUrl).pathname;
+            const pathParts = urlPath.split('/').filter(p => p && !p.includes('.'));
+            // Look for descriptive words in the path
+            const descriptiveParts = pathParts.filter(p => 
+              p.length > 3 && 
+              !['browse', 'product', 'do', 'pid', 'vid', 'pcid', 'cid'].includes(p.toLowerCase())
+            );
+            
+            if (categoryFromUrl) {
+              // Use category from URL (e.g., "pants", "shirts", etc.)
+              searchQuery = `${brand} ${categoryFromUrl}`;
+            } else if (descriptiveParts.length > 0) {
+              searchQuery = [brand, ...descriptiveParts].join(' ').trim();
+            } else {
+              // Use brand + "pants" or "clothing" as fallback
+              searchQuery = `${brand} pants`;
+            }
+            console.log(`[ProductScrape] Banana Republic: Title was brand name, using search query: "${searchQuery}"`);
+          } else if (searchQuery && searchQuery.toLowerCase() !== brand?.toLowerCase()) {
+            searchQuery = [brand, safeTitle].filter(Boolean).join(' ').trim();
+          } else if (brand) {
+            searchQuery = brand;
+          }
           if (searchQuery && searchQuery.length > 3) {
             // Use Google Custom Search API directly (simpler than GoogleShoppingProvider)
             const url = new URL('https://www.googleapis.com/customsearch/v1');
@@ -592,8 +1211,15 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
         
         // Infer brand from domain or URL path
         let brand = host.replace('www.', '').split('.')[0];
-        if (host.includes('bananarepublic') || host.includes('gap.com')) {
+        // Gap Inc. brands - check specific subdomains first
+        if (host.includes('bananarepublic.gap.com') || host === 'bananarepublic.com') {
           brand = 'Banana Republic';
+        } else if (host.includes('oldnavy.gap.com') || host === 'oldnavy.com') {
+          brand = 'Old Navy';
+        } else if (host.includes('gapfactory.com') || host.includes('gapfactory.gap.com')) {
+          brand = 'Gap Factory';
+        } else if (host.includes('gap.com') && !host.includes('oldnavy') && !host.includes('bananarepublic')) {
+          brand = 'Gap';
         } else if (host.includes('hoka.com')) {
           brand = 'Hoka';
         } else if (host.includes('gymshark.com')) {
@@ -613,7 +1239,32 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           }
         }
         
-        const searchQuery = [brand, humanize(slug)].filter(Boolean).join(' ').trim();
+        // For Gap Inc. sites, extract category from URL nav parameter
+        let searchQuery = '';
+        const isGapIncSite = host.includes('gap.com') || host.includes('bananarepublic') || host.includes('oldnavy') || host.includes('gapfactory');
+        if (isGapIncSite) {
+          const navParam = urlObj.searchParams.get('nav');
+          let categoryFromUrl = '';
+          if (navParam) {
+            try {
+              const decoded = decodeURIComponent(navParam);
+              const parts = decoded.split(':');
+              if (parts.length > 1) {
+                categoryFromUrl = parts[parts.length - 1]; // "Pants"
+              }
+            } catch {
+              // Ignore decode errors
+            }
+          }
+          if (categoryFromUrl) {
+            searchQuery = `${brand} ${categoryFromUrl}`;
+          } else {
+            searchQuery = [brand, humanize(slug)].filter(Boolean).join(' ').trim();
+          }
+        } else {
+          searchQuery = [brand, humanize(slug)].filter(Boolean).join(' ').trim();
+        }
+        
         if (searchQuery && searchQuery.length > 3) {
           // First try regular web search to get better title
           const webUrl = new URL('https://www.googleapis.com/customsearch/v1');
@@ -627,6 +1278,7 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           // For SSENSE, prefer URL-based extraction since we can reliably parse the product name
           // Only use Google results if they're clearly better (contain brand + product-specific terms)
           const isSSENSE = host.includes('ssense.com');
+          const isGapIncSite = host.includes('gap.com') || host.includes('bananarepublic') || host.includes('oldnavy') || host.includes('gapfactory');
           
           try {
             const webResponse = await fetch(webUrl.toString());
@@ -655,9 +1307,19 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
                    (firstTitleLower.includes('designer') || firstTitleLower.includes('dresses') || firstTitleLower.includes('clothing')) &&
                    !firstTitleLower.includes(brand.toLowerCase()));
                 
-                // For SSENSE, only use Google title if it contains the brand name and product-specific terms
-                // Otherwise prefer our URL-based extraction
-                if (isSSENSE) {
+                // For Gap Inc. sites, prioritize Google title since we can't scrape the page
+                if (isGapIncSite) {
+                  // Use Google title if it's not just the brand name and contains product keywords
+                  const productKeywords = ['pant', 'shirt', 'dress', 'skirt', 'jacket', 'sweater', 'shoe', 'boot', 'jean', 'short', 'top'];
+                  const hasProductKeyword = productKeywords.some(kw => firstTitleLower.includes(kw));
+                  if (!isGeneric && hasProductKeyword && firstTitle.length > brand.length && !/^banana\s*republic$/i.test(firstTitle)) {
+                    bestTitle = firstTitle.split(' - ')[0].split(' | ')[0].trim();
+                    bestTitle = smartTruncateTitle(bestTitle, 150);
+                    console.log(`[ProductScrape] Banana Republic: Using Google search title: "${bestTitle}"`);
+                  }
+                } else if (isSSENSE) {
+                  // For SSENSE, only use Google title if it contains the brand name and product-specific terms
+                  // Otherwise prefer our URL-based extraction
                   const brandLower = brand.toLowerCase();
                   const slugLower = slug.toLowerCase();
                   const hasBrand = firstTitleLower.includes(brandLower);
@@ -775,7 +1437,26 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           .trim();
       
       if (host.includes('hoka.com')) {
-        const fallbackTitle = humanize(slug || 'Hoka Product');
+        // Extract product name from URL path
+        // URL format: /en/us/gifts-for-running-lifestyle/transport-gtx/1133958.html
+        // Product name is usually the second-to-last segment before the ID
+        let productName = slug;
+        const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+        if (pathSegments.length >= 2) {
+          // Find the segment that looks like a product name (not numeric, not a language code, not .html)
+          const productSegments = pathSegments.filter(s => 
+            !/^\d+$/.test(s) && // Not purely numeric
+            !/\.html?$/i.test(s) && // Not .html or .htm files
+            !['en', 'us', 'gifts-for-running-lifestyle'].includes(s.toLowerCase()) &&
+            s.length > 2
+          );
+          if (productSegments.length > 0) {
+            // Use the last product-like segment (usually the product name)
+            productName = productSegments[productSegments.length - 1];
+          }
+        }
+        const fallbackTitle = humanize(productName || 'Hoka Product');
+        console.log(`[ProductScrape] Hoka: Extracted title from URL: "${fallbackTitle}"`);
         const base: ProductSearchResult = {
           title: fallbackTitle,
           brand: 'Hoka',
@@ -783,6 +1464,57 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           rawMetadata: { source: 'fallback-from-url' },
         };
         return base;
+      } else if (host.includes('loft.com')) {
+        // LOFT URL format: /clothing/sweaters/catl000012/relaxed-everyday-sweater/778238.html
+        // Product name is usually the second-to-last segment
+        let productName = slug;
+        if (segments.length >= 2) {
+          // Find product-like segments (not numeric IDs, not category codes)
+          const productSegments = segments.filter(s => 
+            !/^\d+$/.test(s) && 
+            !/^catl\d+$/.test(s.toLowerCase()) &&
+            !['clothing', 'sweaters', 'html'].includes(s.toLowerCase()) &&
+            s.length > 2
+          );
+          if (productSegments.length > 0) {
+            productName = productSegments[productSegments.length - 1];
+          }
+        }
+        const fallbackTitle = humanize(productName || 'LOFT Product');
+        console.log(`[ProductScrape] LOFT: Extracted title from URL: "${fallbackTitle}"`);
+        return {
+          title: fallbackTitle,
+          brand: 'LOFT',
+          productUrl,
+          rawMetadata: { source: 'fallback-from-url-blocked' },
+        };
+      } else if (host.includes('hm.com') || host.includes('h&m')) {
+        // H&M URL format: /en_us/productpage.0983240057.html
+        // Product name is in the URL slug or we need to use Google search
+        const fallbackTitle = humanize(slug || 'H&M Product');
+        console.log(`[ProductScrape] H&M: Extracted title from URL: "${fallbackTitle}"`);
+        return {
+          title: fallbackTitle,
+          brand: 'H&M',
+          productUrl,
+          rawMetadata: { source: 'fallback-from-url-blocked' },
+        };
+      } else if (host.includes('urbanoutfitters.com')) {
+        // Urban Outfitters URL format: /shop/out-from-under-diana-layering-lace-trim-henley-top
+        // Product name is in the URL path
+        let productName = slug;
+        if (segments.length >= 2 && segments[0] === 'shop') {
+          // Product name is after /shop/
+          productName = segments.slice(1).join('-');
+        }
+        const fallbackTitle = humanize(productName || 'Urban Outfitters Product');
+        console.log(`[ProductScrape] Urban Outfitters: Extracted title from URL: "${fallbackTitle}"`);
+        return {
+          title: fallbackTitle,
+          brand: 'Urban Outfitters',
+          productUrl,
+          rawMetadata: { source: 'fallback-from-url-blocked' },
+        };
       } else if (host.includes('ssense.com')) {
         // Extract brand from URL path: /en-us/women/product/brand/product-name/id
         let brand = 'SSENSE';
@@ -858,6 +1590,53 @@ class PlaceholderProductSearchProvider implements ProductSearchProvider {
 }
 
 // LLM-based metadata extraction
+// Keyword-based category detection as fallback
+export function detectCategoryFromKeywords(title: string, description?: string): string | null {
+  const text = `${title} ${description || ''}`.toLowerCase();
+  
+  // Strong indicators for each category
+  const categoryKeywords: Record<string, RegExp[]> = {
+    'Bottoms': [
+      /\b(pant|pants|trouser|trousers|jean|jeans|short|shorts|skirt|skirts|legging|leggings|jogger|joggers|sweatpant|sweatpants|culotte|culottes)\b/i
+    ],
+    'Shoes': [
+      /\b(shoe|shoes|boot|boots|sneaker|sneakers|heel|heels|pump|pumps|loafer|loafers|flat|flats|sandal|sandals|mule|mules|clog|clogs|oxford|trainer|trainers|wedge|wedges|slipper|slippers|hoka|transport)\b/i
+    ],
+    'Tops': [
+      /\b(top|tops|shirt|shirts|blouse|blouses|tee|tees|t-shirt|t-shirts|tank|tanks|camisole|camisoles|sweater|sweaters|cardigan|cardigans|hoodie|hoodies|pullover|sweatshirt|sweatshirts|bodysuit|bodysuits)\b/i
+    ],
+    'Outerwear': [
+      /\b(jacket|jackets|coat|coats|blazer|blazers|vest|vests|parka|parkas|bomber|trench|windbreaker|windbreakers)\b/i
+    ],
+    'Dresses & One-Pieces': [
+      /\b(dress|dresses|gown|gowns|jumpsuit|jumpsuits|romper|rompers|overall|overalls)\b/i
+    ],
+    'Accessories': [
+      /\b(ring|rings|necklace|necklaces|bracelet|bracelets|earring|earrings|pendant|pendants|chain|chains|jewelry|jewellery|bag|bags|handbag|handbags|purse|purses|clutch|backpack|backpacks|belt|belts|hat|hats|beanie|beanies|scarf|scarves|watch|watches|sunglasses|glove|gloves|brooch|brooches|pin|pins|headband|headbands|shawl|shawls)\b/i
+    ],
+    'Swimwear': [
+      /\b(swimsuit|swimsuits|bikini|bikinis|swimwear|bathing suit|bathing suits)\b/i
+    ],
+    'Underwear & Sleepwear': [
+      /\b(underwear|bra|bras|panties|panty|lingerie|sleepwear|pajama|pajamas|nightgown|nightgowns|robe|robes)\b/i
+    ],
+    'Activewear': [
+      /\b(activewear|athletic|sportswear|gym wear|workout|yoga pants|yoga top)\b/i
+    ],
+  };
+  
+  // Check each category, return first match
+  for (const [category, patterns] of Object.entries(categoryKeywords)) {
+    for (const pattern of patterns) {
+      if (pattern.test(text)) {
+        return category;
+      }
+    }
+  }
+  
+  return null;
+}
+
 export async function extractItemMetadata(
   title: string,
   description?: string,
@@ -879,9 +1658,16 @@ export async function extractItemMetadata(
     [key: string]: string | number | undefined;
   };
 }> {
+  // First, try keyword-based detection as a strong signal
+  const keywordCategory = detectCategoryFromKeywords(title, description);
+  if (keywordCategory) {
+    console.log(`[ProductSearch] Keyword-based category detection: "${keywordCategory}" for "${title}"`);
+  }
+  
   if (!openai) {
     console.warn('[ProductSearch] OpenAI API key missing, skipping metadata extraction');
-    return {};
+    // Return keyword-based category if available
+    return keywordCategory ? { category: keywordCategory } : {};
   }
 
   try {
@@ -891,17 +1677,24 @@ Item: ${title}
 ${description ? `Description: ${description}` : ''}
 ${imageUrl ? `Image available: Yes - analyze the image for visual details like neckline, crop, sleeve length, etc.` : ''}
 
-IMPORTANT: Before categorizing, check if the item is jewelry or an accessory:
-- Look for keywords in the title/description: ring, necklace, bracelet, earring, pendant, chain, jewelry, accessory, bag, belt, hat, scarf, watch, sunglasses
-- If the item is clearly jewelry or an accessory, categorize as "Accessories" with appropriate subCategory (e.g., "Rings", "Necklaces", "Bracelets")
+CRITICAL CATEGORIZATION RULES (follow these in order):
+1. SHOES: If the title/description contains ANY of these words, it MUST be "Shoes": shoe, shoes, boot, boots, sneaker, sneakers, heel, heels, pump, pumps, loafer, loafers, flat, flats, sandal, sandals, mule, mules, clog, clogs, oxford, trainer, trainers, wedge, wedges, slipper, slippers, hoka, transport, running shoe, walking shoe
+2. BOTTOMS: If the title/description contains ANY of these words, it MUST be "Bottoms": pant, pants, trouser, trousers, jean, jeans, short, shorts, skirt, skirts, legging, leggings, jogger, joggers, sweatpant, sweatpants, culotte, culottes, painter pant, pull-on pant, wide leg, straight leg
+3. ACCESSORIES: Only if the title/description contains: ring, necklace, bracelet, earring, pendant, chain, jewelry, accessory, bag, belt, hat, scarf, watch, sunglasses, glove, brooch, pin, headband, shawl
+4. TOPS: Only if it's clearly a shirt, blouse, sweater, t-shirt, tank, camisole, hoodie, etc. - NOT pants, skirts, or shoes
+5. OUTERWEAR: Only if it's clearly a jacket, coat, blazer, vest, parka, bomber, trench, windbreaker
+6. DRESSES: Only if it's clearly a dress, gown, jumpsuit, romper, overall
+
+${keywordCategory ? `STRONG HINT: Based on keywords, this item is likely "${keywordCategory}". Verify this is correct, but if the title/description clearly matches "${keywordCategory}" keywords, use that category.` : ''}
 
 Extract and return a JSON object with these fields (only include fields you can confidently determine):
-- category: One of: Tops, Bottoms, Dresses & One-Pieces, Outerwear, Shoes, Accessories, Underwear & Sleepwear, Swimwear
-  * IMPORTANT: "Accessories" includes jewelry (rings, necklaces, bracelets, earrings, pendants), bags, belts, hats, scarves, watches, sunglasses, etc.
-  * If the item is clearly jewelry or an accessory, use "Accessories" category, NOT "Tops" or other clothing categories
-  * "Bottoms" includes: pants, jeans, trousers, shorts, skirts (mini, midi, maxi), leggings, joggers, sweatpants, etc.
-  * "Tops" includes: shirts, t-shirts, blouses, sweaters, hoodies, tanks, camisoles, etc. - NOT skirts or pants
-  * If the title/description contains "skirt", "pants", "jeans", "shorts", "trousers", "leggings", etc., it MUST be categorized as "Bottoms"
+- category: One of: Tops, Bottoms, Dresses & One-Pieces, Outerwear, Shoes, Accessories, Underwear & Sleepwear, Swimwear, Activewear
+  * CRITICAL: If the title contains "pant", "pants", "jean", "jeans", "short", "shorts", "skirt", "skirt", "legging", "leggings", "jogger", "joggers", it MUST be "Bottoms"
+  * CRITICAL: If the title contains "shoe", "shoes", "boot", "boots", "sneaker", "sneakers", "heel", "heels", "pump", "pumps", "loafer", "loafers", "flat", "flats", "sandal", "sandals", "mule", "mules", "clog", "clogs", "oxford", "trainer", "trainers", "wedge", "wedges", "hoka", "transport", it MUST be "Shoes"
+  * "Bottoms" includes: pants, jeans, trousers, shorts, skirts (mini, midi, maxi), leggings, joggers, sweatpants, culottes, painter pants, pull-on pants, wide leg pants, straight leg pants, etc.
+  * "Shoes" includes: all footwear - boots, sneakers, heels, pumps, loafers, flats, sandals, mules, clogs, oxfords, trainers, wedges, slippers, running shoes, walking shoes, etc.
+  * "Accessories" includes: jewelry (rings, necklaces, bracelets, earrings, pendants), bags, belts, hats, scarves, watches, sunglasses, gloves, etc.
+  * "Tops" includes: shirts, t-shirts, blouses, sweaters, hoodies, tanks, camisoles, etc. - NOT skirts, pants, or shoes
 - subCategory: Specific subcategory (e.g., "T-Shirts", "Jeans", "Skirts", "Midi Skirts", "Ankle Boots", "Rings", "Necklaces", "Bracelets", "Earrings", "Bags", "Belts")
 - colors: Array of color names (e.g., ["black", "navy", "white"])
 - fabrics: Array of fabric/material names (e.g., ["cotton", "silk", "wool"])
@@ -971,8 +1764,13 @@ Return ONLY the JSON object, no other text.`;
 
     try {
       const parsed = JSON.parse(content);
+      // Override category with keyword-based detection if available (more reliable)
+      const finalCategory = keywordCategory || parsed.category;
+      if (keywordCategory && parsed.category !== keywordCategory) {
+        console.warn(`[ProductSearch] LLM returned category "${parsed.category}" but keyword detection suggests "${keywordCategory}". Using keyword-based category.`);
+      }
       return {
-        category: parsed.category,
+        category: finalCategory,
         subCategory: parsed.subCategory,
         colors: Array.isArray(parsed.colors) ? parsed.colors : undefined,
         fabrics: Array.isArray(parsed.fabrics) ? parsed.fabrics : undefined,
@@ -987,11 +1785,13 @@ Return ONLY the JSON object, no other text.`;
       };
     } catch (parseError) {
       console.error('[ProductSearch] Failed to parse metadata extraction response:', parseError);
-      return {};
+      // Return keyword-based category if available, even if LLM parsing failed
+      return keywordCategory ? { category: keywordCategory } : {};
     }
   } catch (error) {
     console.error('[ProductSearch] Error extracting metadata:', error);
-    return {};
+    // Return keyword-based category if available, even if LLM extraction failed
+    return keywordCategory ? { category: keywordCategory } : {};
   }
 }
 

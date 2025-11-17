@@ -54,7 +54,9 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
       onClose();
     } catch (err) {
       console.error('Error adding product:', err);
-      alert(err instanceof Error ? err.message : 'Failed to add product');
+      // Use a more user-friendly alert or could be replaced with a toast/notification
+      const errorMessage = err instanceof Error ? err.message : 'Failed to add product';
+      alert(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -251,12 +253,15 @@ const AddFromLink: React.FC<AddFromLinkProps> = ({ onBack, onClose, onSelectProd
       const resp = await apiPost('/api/products/ingest-url', { url });
       if (!resp.ok) {
         const data = await resp.json();
+        // Use the error message from the backend, which includes user-friendly messages
         throw new Error(data.error || 'Failed to scrape product');
       }
       const data = await resp.json();
       setProduct(data.product as ProductSearchResult);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to scrape product');
+      // Display user-friendly error message
+      const errorMessage = e instanceof Error ? e.message : 'Failed to scrape product';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -291,7 +296,22 @@ const AddFromLink: React.FC<AddFromLinkProps> = ({ onBack, onClose, onSelectProd
           />
           <button onClick={handleFetch} disabled={loading || !url}>Fetch</button>
         </div>
-        {error && <div className="product-search-error" style={{ marginTop: 8 }}>{error}</div>}
+        {error && (
+          <div className="product-search-error" style={{ 
+            marginTop: 8, 
+            padding: '12px', 
+            backgroundColor: '#fee', 
+            border: '1px solid #fcc', 
+            borderRadius: '4px', 
+            color: '#c33' 
+          }}>
+            <strong>Unable to fetch product:</strong>
+            <div style={{ marginTop: '4px', fontSize: '0.9em' }}>{error}</div>
+            <div style={{ marginTop: '8px', fontSize: '0.85em', color: '#666' }}>
+              You can still add this item manually using the "Add Manually" option.
+            </div>
+          </div>
+        )}
         {product && (
           <div className="product-search-result" style={{ marginTop: 12 }}>
             {product.imageUrl && (

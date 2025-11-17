@@ -975,6 +975,23 @@ app.post('/api/products/ingest-url', async (req, res) => {
     return res.json({ product: result });
   } catch (error) {
     console.error('[ProductIngest] Error ingesting product URL:', error);
+    
+    // Handle specific error types with user-friendly messages
+    if (error instanceof Error) {
+      if (error.message === 'non_product_page') {
+        return res.status(404).json({ 
+          error: 'This page appears to be blocked, unavailable, or not a product page. The site may be blocking automated access, or the page may be under maintenance.',
+          errorType: 'non_product_page'
+        });
+      }
+      if (error.message === 'store_error_page') {
+        return res.status(404).json({ 
+          error: 'This page appears to be an error page or is temporarily unavailable. Please try again later or check if the URL is correct.',
+          errorType: 'store_error_page'
+        });
+      }
+    }
+    
     return res.status(500).json({ error: 'Failed to ingest product from URL' });
   }
 });
@@ -1019,8 +1036,23 @@ app.post('/api/items/from-product', async (req, res) => {
       );
     }
 
-    // Determine category - use extracted or product category, or default
-    const category = extractedMetadata?.category || product.category || 'Tops';
+    // Determine category - prioritize extracted metadata, then product category, then keyword-based fallback
+    // If no category is found, default to 'Tops' (but this should rarely happen with keyword detection)
+    let category = extractedMetadata?.category || product.category;
+    
+    // If still no category, try keyword-based detection as last resort
+    if (!category && product.title) {
+      const { detectCategoryFromKeywords } = await import('./productSearch');
+      const keywordCategory = detectCategoryFromKeywords(product.title, product.description);
+      if (keywordCategory) {
+        category = keywordCategory;
+        console.log(`[ProductSearch] Using keyword-based category fallback: "${category}" for "${product.title}"`);
+      }
+    }
+    
+    if (!category) {
+      category = 'Tops'; // Ultimate fallback
+    }
     const resolvedSubCategory = resolveSubCategory(
       category,
       extractedMetadata?.subCategory,
