@@ -189,6 +189,24 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
       const puppeteer = await import('puppeteer');
       const fs = await import('fs');
       
+      // Configure cache directory for Render (persistent storage)
+      // Render's persistent disk is at /opt/render/project/.render
+      const isRender = process.env.RENDER === 'true' || process.env.RENDER_SERVICE_ID !== undefined;
+      if (isRender) {
+        const renderCacheDir = '/opt/render/project/.render/puppeteer-cache';
+        try {
+          // Ensure cache directory exists
+          if (!fs.existsSync(renderCacheDir)) {
+            fs.mkdirSync(renderCacheDir, { recursive: true });
+          }
+          // Set Puppeteer cache directory via environment variable
+          process.env.PUPPETEER_CACHE_DIR = renderCacheDir;
+          console.log(`[ProductScrape] Using Render cache directory: ${renderCacheDir}`);
+        } catch (error) {
+          console.warn(`[ProductScrape] Could not create cache directory, using default:`, error);
+        }
+      }
+      
       // On macOS, bundled Chromium may fail due to missing system frameworks
       // Try to use system Chrome/Chromium first if available, fallback to bundled
       let executablePath: string | undefined;

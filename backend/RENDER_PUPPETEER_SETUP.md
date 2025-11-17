@@ -12,9 +12,9 @@ Puppeteer can bundle its own Chromium browser, eliminating the need for system p
 
 1. **Build Command** (in Render dashboard):
    ```bash
-   npm install && npm run build
+   npm install && npx puppeteer browsers install chrome && npm run build
    ```
-   That's it! No `apt-get` needed.
+   This installs the Chrome browser that Puppeteer needs.
 
 2. **Start Command**: `npm start`
 
@@ -25,10 +25,11 @@ Puppeteer can bundle its own Chromium browser, eliminating the need for system p
 
 ## How It Works
 
-- `puppeteer` (not `puppeteer-core`) includes a bundled Chromium browser
-- When you run `npm install`, Puppeteer automatically downloads Chromium (~300MB)
-- The code uses Puppeteer's bundled browser - no system Chrome/Chromium required
-- Works on any platform (Render, local, etc.) without additional setup
+- `puppeteer` (not `puppeteer-core`) can download Chrome browsers on demand
+- The build command runs `npx puppeteer browsers install chrome` to download Chrome (~300MB)
+- Chrome is cached in `/opt/render/project/.render/puppeteer-cache` for faster subsequent builds
+- The code automatically detects Render and uses the correct cache directory
+- Works on any platform (Render, local, etc.) without system Chrome installation
 
 ## Trade-offs
 
@@ -37,10 +38,11 @@ Puppeteer can bundle its own Chromium browser, eliminating the need for system p
 - ✅ No permission issues
 - ✅ Consistent browser version across environments
 - ✅ Simplest deployment setup
+- ✅ Browser cached in Render's persistent storage for faster rebuilds
 
 **Cons:**
-- ⚠️ Increases `node_modules` size by ~300MB
-- ⚠️ Slightly longer `npm install` time (downloads Chromium)
+- ⚠️ First build downloads Chrome (~300MB, takes ~1-2 minutes)
+- ⚠️ Subsequent builds are faster (uses cached browser)
 
 ## Migration from puppeteer-core
 
