@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './OutfitGenerator.css';
 import { WardrobeItem } from '../App';
-import { getPlaceholderImage } from '../utils/placeholderImages';
 import StockPhotoImage from './StockPhotoImage';
 
 interface OutfitGeneratorProps {

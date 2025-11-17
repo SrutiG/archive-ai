@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ItemInput.css';
-import { SectionHeader, Button } from '../design-system';
+import { Button } from '../design-system';
 import { getMeasurementFields, Measurements as MeasurementsType } from '../utils/measurementFields';
 import { useCamera } from '../hooks/useCamera';
 import { apiGet, apiUpload } from '../utils/api';

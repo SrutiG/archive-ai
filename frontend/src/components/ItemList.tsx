@@ -3,7 +3,6 @@ import './ItemList.css';
 import { WardrobeItem } from '../App';
 import ItemEdit from './ItemEdit';
 import { Heading } from '../design-system';
-import { getPlaceholderImage } from '../utils/placeholderImages';
 import StockPhotoImage from './StockPhotoImage';
 import { apiDelete } from '../utils/api';
 

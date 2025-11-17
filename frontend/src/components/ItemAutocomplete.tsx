@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { WardrobeItem } from '../App';
 import './ItemAutocomplete.css';
-import { getPlaceholderImage } from '../utils/placeholderImages';
 import StockPhotoImage from './StockPhotoImage';
 
 interface ItemAutocompleteProps {

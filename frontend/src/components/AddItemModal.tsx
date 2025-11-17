@@ -180,7 +180,6 @@ const AddItemModal: React.FC<AddItemModalProps> = ({
                 isOpen={true}
                 onClose={() => setMode('select')}
                 onItemsCreated={handleItemsCreated}
-                apiUrl={apiUrl}
               />
             </div>
           </div>

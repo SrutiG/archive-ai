@@ -4,7 +4,6 @@ import { WardrobeItem } from '../App';
 import FeedbackModal from '../components/FeedbackModal';
 import ItemAutocomplete from '../components/ItemAutocomplete';
 import { PageHeader, SectionHeader, Button } from '../design-system';
-import { getPlaceholderImage } from '../utils/placeholderImages';
 import StockPhotoImage from '../components/StockPhotoImage';
 import { apiGet, apiPost, apiDelete } from '../utils/api';
 import { useUser } from '../contexts/UserContext';
