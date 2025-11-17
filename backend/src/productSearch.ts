@@ -295,10 +295,30 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
         page.setDefaultNavigationTimeout(30000);
         
         console.log(`[ProductScrape] Navigating to ${productUrl}...`);
-        // Use domcontentloaded instead of load - more reliable for JS-heavy sites
-        await page.goto(productUrl, { 
-          waitUntil: 'domcontentloaded', 
+        const primaryGotoOptions = {
+          waitUntil: 'domcontentloaded' as const,
           timeout: 30000,
+        };
+        const fallbackGotoOptions = {
+          waitUntil: 'networkidle2' as const,
+          timeout: 45000,
+        };
+        
+        const navigateWithRetry = async () => {
+          try {
+            await page.goto(productUrl, primaryGotoOptions);
+            return;
+          } catch (error) {
+            console.warn(`[ProductScrape] Primary navigation failed (${error instanceof Error ? error.message : error}). Retrying with networkidle2...`);
+            await page.goto(productUrl, fallbackGotoOptions);
+          }
+        };
+        
+        await navigateWithRetry();
+        
+        // Ensure the DOM is available even if navigation events didn't fire as expected
+        await page.waitForSelector('body', { timeout: 5000 }).catch(() => {
+          console.warn('[ProductScrape] body selector not found after navigation, continuing anyway');
         });
         
         // Wait longer for JavaScript-heavy sites to render content
