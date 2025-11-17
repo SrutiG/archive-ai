@@ -14,7 +14,7 @@ const ALLOWED_IMAGE_SIZES = new Set([
 ]);
 
 const DEFAULT_IMAGE_SIZE = '1024x1024' as const;
-const DEFAULT_IMAGE_MODEL = 'gpt-image-1-mini';
+const DEFAULT_IMAGE_MODEL = 'dall-e-3';
 const DEFAULT_BUCKET = 'wardrobe-images';
 const DEFAULT_PROMPT_SPEC = 'src/scripts/json/stockPhotoPrompts.json';
 
@@ -39,11 +39,12 @@ type Spec = {
 
 const openaiApiKey = process.env.OPENAI_API_KEY;
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+// Use service role key for uploads to bypass RLS policies
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
 if (!openaiApiKey) throw new Error('Missing OPENAI_API_KEY');
 if (!supabaseUrl) throw new Error('Missing SUPABASE_URL');
-if (!supabaseAnonKey) throw new Error('Missing SUPABASE_ANON_KEY');
+if (!supabaseServiceKey) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY');
 
 const IMAGE_SIZE = normalizeImageSize(process.env.IMAGE_SIZE);
 const IMAGE_MODEL = process.env.IMAGE_MODEL || DEFAULT_IMAGE_MODEL;
@@ -51,7 +52,8 @@ const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || DEFAULT_BUCKET;
 const PROMPTS_JSON = process.env.PROMPTS_JSON || DEFAULT_PROMPT_SPEC;
 
 const openai = new OpenAI({ apiKey: openaiApiKey });
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Use service role key to bypass RLS for storage uploads
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 function slugify(text: string): string {
   return text
@@ -65,16 +67,53 @@ function slugify(text: string): string {
 
 function buildPrompt(base: string, gender: string, imageType?: string): string {
   const genderString = gender || 'unisex';
-  let prompt = base.replace(/\{gender\}/gi, genderString.toLowerCase());
-  prompt += ' all-black palette, matte textures, minimal neutral background, controlled studio lighting, cohesive avant-garde aesthetic.';
-
-  if (imageType?.toLowerCase().includes('product-only')) {
-    prompt += ' product-only e-commerce angle, soft seamless shadow.';
-  } else if (imageType?.toLowerCase().includes('macro')) {
-    prompt += ' macro close-up, shallow depth of field, crisp texture.';
-  } else if (imageType?.toLowerCase().includes('full-body')) {
-    prompt += ' full-body framing, neutral pose.';
-  }
+  // Remove any references to models, people, figures from the base prompt
+  let prompt = base
+    .replace(/\{gender\}/gi, '')
+    // Remove phrases like "on women model", "for men", "with unisex figure"
+    .replace(/\b(on|for|with|styled on|designed for)\s+(women|men|unisex|gender)\s*(model|figure|person|body)?\b/gi, '')
+    // Remove standalone references
+    .replace(/\bmodel\b/gi, '')
+    .replace(/\bfigure\b/gi, '')
+    .replace(/\bperson\b/gi, '')
+    .replace(/\bpose\b/gi, '')
+    .replace(/\bstance\b/gi, '')
+    .replace(/\bdynamic fashion pose\b/gi, '')
+    .replace(/\bhigh-fashion pose\b/gi, '')
+    .replace(/\bneutral pose\b/gi, '')
+    // Replace fancy design terms with basic/simple
+    .replace(/\bavant-garde\b/gi, 'basic')
+    .replace(/\barchitectural\b/gi, 'simple')
+    .replace(/\bsculptural\b/gi, 'simple')
+    .replace(/\bdeconstructed\b/gi, 'simple')
+    .replace(/\bexperimental\b/gi, 'basic')
+    .replace(/\bconceptual\b/gi, 'basic')
+    .replace(/\bmodular\b/gi, 'simple')
+    .replace(/\bexaggerated\b/gi, 'standard')
+    .replace(/\belongated\b/gi, 'standard')
+    .replace(/\basymmetric\b/gi, 'standard')
+    .replace(/\bprecise contouring\b/gi, 'standard fit')
+    .replace(/\bcutout geometry\b/gi, 'simple design')
+    .replace(/\blayered panels\b/gi, 'simple panels')
+    .replace(/\blayered construction\b/gi, 'simple construction')
+    .replace(/\bpanelled texture\b/gi, 'simple texture')
+    .replace(/\btechnical details\b/gi, 'simple details')
+    .replace(/\btechnical textures\b/gi, 'simple textures')
+    .replace(/\bgeometric cutouts\b/gi, 'simple design')
+    .replace(/\bfuturistic curves\b/gi, 'simple curves')
+    .replace(/\bsculptural outsole\b/gi, 'simple outsole')
+    .replace(/\bfaceted shell\b/gi, 'simple design')
+    .replace(/\bangular hardware\b/gi, 'simple hardware')
+    .replace(/\bangular geometry\b/gi, 'simple design')
+    .replace(/\bsculptural metalwork\b/gi, 'simple metalwork')
+    .replace(/\barchitectural facets\b/gi, 'simple design')
+    // Clean up extra spaces
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  // Always make it product-only: basic black garment on plain background, no humans
+  prompt = 'Basic black ' + prompt.replace(/^black\s+/i, '').replace(/^basic\s+/i, '');
+  prompt += ' Product photography: basic black garment only displayed on plain white or neutral grey background, flat lay or on invisible mannequin/hanger, no human, no person, no model, no face, no body parts, no people visible, no hands, no arms, no legs. Simple, basic design, solid black color, matte textures, minimal neutral background, controlled studio lighting, e-commerce product shot style.';
 
   return prompt;
 }

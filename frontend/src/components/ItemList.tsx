@@ -3,7 +3,8 @@ import './ItemList.css';
 import { WardrobeItem } from '../App';
 import ItemEdit from './ItemEdit';
 import { Heading } from '../design-system';
-import { getItemImageUrl, getPlaceholderImage } from '../utils/placeholderImages';
+import { getPlaceholderImage } from '../utils/placeholderImages';
+import StockPhotoImage from './StockPhotoImage';
 import { apiDelete } from '../utils/api';
 
 interface ItemListProps {
@@ -109,13 +110,11 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
           {items.map((item) => (
             <div key={item.id} className="item-card">
               <div className="item-image-container">
-                <img
-                  src={getItemImageUrl(item, apiUrl)}
+                <StockPhotoImage
+                  item={item}
+                  apiUrl={apiUrl}
                   alt={item.title}
                   className="item-image"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
-                  }}
                 />
                 <span className="item-category">{getDisplayCategory(item)}</span>
               </div>
@@ -153,13 +152,11 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
                 {categoryItems.map((item) => (
                   <div key={item.id} className="item-card">
                     <div className="item-image-container">
-                      <img
-                        src={getItemImageUrl(item, apiUrl)}
+                      <StockPhotoImage
+                        item={item}
+                        apiUrl={apiUrl}
                         alt={item.title}
                         className="item-image"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
-                        }}
                       />
                       <span className="item-category">{getDisplayCategory(item)}</span>
                     </div>

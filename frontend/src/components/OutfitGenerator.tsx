@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import './OutfitGenerator.css';
 import { WardrobeItem } from '../App';
-import { getItemImageUrl, getPlaceholderImage } from '../utils/placeholderImages';
+import { getPlaceholderImage } from '../utils/placeholderImages';
+import StockPhotoImage from './StockPhotoImage';
 
 interface OutfitGeneratorProps {
   items: WardrobeItem[];
@@ -129,13 +130,11 @@ const OutfitGenerator: React.FC<OutfitGeneratorProps> = ({ items, apiUrl }) => {
                           <div key={itemIndex} className="outfit-item">
                             {item ? (
                               <>
-                                <img
-                                  src={getItemImageUrl(item, apiUrl)}
+                                <StockPhotoImage
+                                  item={item}
+                                  apiUrl={apiUrl}
                                   alt={itemTitle}
                                   className="outfit-item-image"
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
-                                  }}
                                 />
                                 <span className="outfit-item-title">{itemTitle}</span>
                               </>

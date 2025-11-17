@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { WardrobeItem } from '../App';
 import './ItemAutocomplete.css';
-import { getItemImageUrl, getPlaceholderImage } from '../utils/placeholderImages';
+import { getPlaceholderImage } from '../utils/placeholderImages';
+import StockPhotoImage from './StockPhotoImage';
 
 interface ItemAutocompleteProps {
   items: WardrobeItem[];
@@ -112,13 +113,11 @@ const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
         <div className="selected-items">
           {selectedItems.map((item) => (
             <span key={item.id} className="item-tag">
-              <img 
-                src={getItemImageUrl(item, apiUrl)} 
+              <StockPhotoImage
+                item={item}
+                apiUrl={apiUrl}
                 alt={item.title}
                 className="item-tag-image"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
-                }}
               />
               <span className="item-tag-title">{item.title}</span>
               <button
@@ -172,13 +171,11 @@ const ItemAutocomplete: React.FC<ItemAutocompleteProps> = ({
                 className="item-suggestion-item"
               >
                 <div className="item-suggestion-content">
-                  <img 
-                    src={getItemImageUrl(item, apiUrl)} 
+                  <StockPhotoImage
+                    item={item}
+                    apiUrl={apiUrl}
                     alt={item.title}
                     className="item-suggestion-image"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
-                    }}
                   />
                   <div className="item-suggestion-text">
                     <span className="item-suggestion-title">{item.title}</span>

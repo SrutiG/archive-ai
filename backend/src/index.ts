@@ -1682,6 +1682,120 @@ app.get('/api/subcategories', (req, res) => {
   res.json(allSubcategories);
 });
 
+// Helper function to slugify text (matches generateStockPhotos.ts logic)
+function slugify(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[\/\\]/g, ' ')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9\-_]/g, '');
+}
+
+// Get stock photo URL for a category/subcategory (uses unisex photos)
+app.get('/api/stock-photo/:category', async (req, res) => {
+  try {
+    const category = decodeURIComponent(req.params.category);
+    const subcategory = typeof req.query.subcategory === 'string' 
+      ? decodeURIComponent(req.query.subcategory) 
+      : undefined;
+
+    console.log(`[Stock Photo] Request for category: "${category}", subcategory: "${subcategory || 'none'}"`);
+
+    if (!supabaseStorage.isSupabaseConfigured()) {
+      console.warn('[Stock Photo] Supabase not configured');
+      return res.status(503).json({ error: 'Supabase not configured' });
+    }
+
+    // Map category names to match stock photo folder structure
+    // The stock photos use "Dresses & One-Pieces" but the app might use "Dresses"
+    const categoryMapping: Record<string, string> = {
+      'Dresses': 'Dresses & One-Pieces',
+    };
+    const mappedCategory = categoryMapping[category] || category;
+
+    // Build folder path: unisex photos use format "category-subcategory"
+    let folderPath: string;
+    if (subcategory) {
+      folderPath = `${slugify(mappedCategory)}-${slugify(subcategory)}`;
+    } else {
+      // For categories without subcategories, try common defaults
+      const defaultSubcategories: Record<string, string> = {
+        'Tops': 'tees',
+        'Bottoms': 'pants',
+        'Dresses & One-Pieces': 'dresses',
+        'Dresses': 'dresses',
+        'Outerwear': 'blazer',
+        'Shoes': 'boots',
+        'Bags': 'tote',
+        'Accessories': 'belt',
+        'Jewelry': 'necklace',
+        'Underwear & Sleepwear': 'underwear-and-sleepwear',
+        'Swimwear': 'swimwear',
+      };
+      const defaultSub = defaultSubcategories[mappedCategory] || 'other';
+      folderPath = `${slugify(mappedCategory)}-${slugify(defaultSub)}`;
+    }
+
+    console.log(`[Stock Photo] Looking in folder: "${folderPath}"`);
+
+    // Get Supabase client and list files in the folder
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+    const bucket = process.env.SUPABASE_STORAGE_BUCKET || 'wardrobe-images';
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('[Stock Photo] Supabase credentials not configured');
+      return res.status(503).json({ error: 'Supabase credentials not configured' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // List files in the folder
+    const { data: files, error } = await supabase.storage
+      .from(bucket)
+      .list(folderPath, {
+        limit: 10,
+        sortBy: { column: 'created_at', order: 'desc' }
+      });
+
+    if (error) {
+      console.error(`[Stock Photo] Error listing files in "${folderPath}":`, error);
+      // Try listing parent directory to see what folders exist
+      const parentPath = folderPath.split('/')[0] || folderPath.split('-')[0];
+      const { data: parentFiles } = await supabase.storage
+        .from(bucket)
+        .list(parentPath, { limit: 100 });
+      console.log(`[Stock Photo] Available folders in "${parentPath}":`, parentFiles?.map(f => f.name).slice(0, 20));
+      return res.status(404).json({ error: 'Stock photo folder not found', folderPath });
+    }
+
+    if (!files || files.length === 0) {
+      console.warn(`[Stock Photo] No files found in "${folderPath}"`);
+      return res.status(404).json({ error: 'No stock photos found', folderPath });
+    }
+
+    console.log(`[Stock Photo] Found ${files.length} file(s) in "${folderPath}", using: ${files[0].name}`);
+
+    // Get the first file (most recent)
+    const file = files[0];
+    const filePath = `${folderPath}/${file.name}`;
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from(bucket)
+      .getPublicUrl(filePath);
+
+    console.log(`[Stock Photo] Returning URL: ${urlData.publicUrl}`);
+    res.json({ url: urlData.publicUrl });
+  } catch (error) {
+    console.error('[Stock Photo] Error fetching stock photo:', error);
+    res.status(500).json({ error: 'Failed to fetch stock photo' });
+  }
+});
+
 // Get saved outfits
 app.get('/api/outfits/saved', async (req, res) => {
   try {

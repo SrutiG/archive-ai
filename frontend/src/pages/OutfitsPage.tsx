@@ -4,7 +4,8 @@ import { WardrobeItem } from '../App';
 import FeedbackModal from '../components/FeedbackModal';
 import ItemAutocomplete from '../components/ItemAutocomplete';
 import { PageHeader, SectionHeader, Button } from '../design-system';
-import { getItemImageUrl, getPlaceholderImage } from '../utils/placeholderImages';
+import { getPlaceholderImage } from '../utils/placeholderImages';
+import StockPhotoImage from '../components/StockPhotoImage';
 import { apiGet, apiPost, apiDelete } from '../utils/api';
 import { useUser } from '../contexts/UserContext';
 
@@ -700,13 +701,11 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                       <div key={itemIndex} className="outfit-item">
                         {item ? (
                           <>
-                            <img
-                              src={getItemImageUrl(item, apiUrl)}
+                            <StockPhotoImage
+                              item={item}
+                              apiUrl={apiUrl}
                               alt={itemTitle}
                               className="outfit-item-image"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
-                              }}
                             />
                             <span className="outfit-item-title">{itemTitle}</span>
                           </>
@@ -866,13 +865,11 @@ const OutfitsPage: React.FC<OutfitsPageProps> = ({ apiUrl }) => {
                               >
                                 <div className="outfit-category-row-thumb">
                         {item ? (
-                            <img
-                              src={getItemImageUrl(item, apiUrl)}
-                                      alt={title}
-                                      className="outfit-category-row-image"
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = getPlaceholderImage(item.category);
-                              }}
+                            <StockPhotoImage
+                              item={item}
+                              apiUrl={apiUrl}
+                              alt={title}
+                              className="outfit-category-row-image"
                             />
                                   ) : (
                                     <div className="outfit-category-row-placeholder">{title}</div>
