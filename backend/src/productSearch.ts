@@ -70,6 +70,9 @@ function smartTruncateTitle(title: string, maxLength: number = 150): string {
 
 // Simple product page scraper (OpenGraph + fallbacks)
 export async function scrapeProductFromUrl(productUrl: string): Promise<ProductSearchResult | null> {
+  const normalizedUrl = productUrl.includes('#')
+    ? productUrl.slice(0, productUrl.indexOf('#'))
+    : productUrl;
   // Helper to detect tracking pixels/common placeholders
   const looksLikePixel = (u: string) => {
     if (!u || u.length < 12) return true;
@@ -79,7 +82,7 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
       lower.includes('pixel_') && lower.includes('akam'); // Gap Inc. specific
   };
   
-  const host = new URL(productUrl).hostname.toLowerCase();
+  const host = new URL(normalizedUrl).hostname.toLowerCase();
   
   // Helper function to check if HTML looks like it needs JavaScript rendering
   const needsBrowserRendering = async (htmlContent: string): Promise<boolean> => {
@@ -236,26 +239,40 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
         }
       }
       
+      // Base browser args
+      const browserArgs = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1920,1080',
+      ];
+      
+      // Some Gap Inc. sites misbehave over HTTP/2; disable only for those hosts
+      const gapHosts = [
+        'bananarepublic.gap.com',
+        'www.bananarepublic.gap.com',
+        'oldnavy.gap.com',
+        'www.oldnavy.gap.com',
+        'gapfactory.com',
+        'www.gapfactory.com',
+        'gap.com',
+        'www.gap.com',
+      ];
+      if (gapHosts.some(domain => host.includes(domain))) {
+        browserArgs.push('--disable-http2', '--disable-quic');
+      }
+      
       // Use bundled Chromium if no system browser found (or on Linux/Render)
       const launchOptions: any = {
         headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
-          // Disable HTTP/2 to avoid ERR_HTTP2_PROTOCOL_ERROR
-          '--disable-http2',
-          '--disable-quic',
-          // Additional stealth flags
-          '--disable-blink-features=AutomationControlled',
-          '--window-size=1920,1080',
-        ],
+        args: browserArgs,
       };
       
       // Only set executablePath if we found a system browser (macOS fallback)
@@ -269,6 +286,17 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
       
       try {
         const page = await browser.newPage();
+        
+        // Block non-essential resources to speed up navigation and reduce load
+        await page.setRequestInterception(true);
+        page.on('request', (req) => {
+          const type = req.resourceType();
+          if (['image', 'media', 'font', 'stylesheet'].includes(type)) {
+            req.abort();
+          } else {
+            req.continue();
+          }
+        });
         
         // Set a realistic user agent
         await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -289,32 +317,40 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
           'Connection': 'keep-alive',
           'Upgrade-Insecure-Requests': '1',
+          'Cache-Control': 'no-cache',
         });
         
         // Set timeout to 30 seconds (increased for slow sites)
         page.setDefaultNavigationTimeout(30000);
         
-        console.log(`[ProductScrape] Navigating to ${productUrl}...`);
+        console.log(`[ProductScrape] Navigating to ${normalizedUrl}...`);
         const primaryGotoOptions = {
           waitUntil: 'domcontentloaded' as const,
-          timeout: 30000,
+          timeout: 20000,
         };
         const fallbackGotoOptions = {
           waitUntil: 'networkidle2' as const,
-          timeout: 45000,
+          timeout: 35000,
         };
         
-        const navigateWithRetry = async () => {
+        let navigationSucceeded = false;
+        try {
+          await page.goto(normalizedUrl, primaryGotoOptions);
+          navigationSucceeded = true;
+        } catch (error) {
+          console.warn(`[ProductScrape] Primary navigation failed (${error instanceof Error ? error.message : error}). Retrying with networkidle2...`);
           try {
-            await page.goto(productUrl, primaryGotoOptions);
-            return;
-          } catch (error) {
-            console.warn(`[ProductScrape] Primary navigation failed (${error instanceof Error ? error.message : error}). Retrying with networkidle2...`);
-            await page.goto(productUrl, fallbackGotoOptions);
+            await page.goto(normalizedUrl, fallbackGotoOptions);
+            navigationSucceeded = true;
+          } catch (fallbackError) {
+            console.error(`[ProductScrape] Fallback navigation also failed: ${fallbackError instanceof Error ? fallbackError.message : fallbackError}`);
           }
-        };
+        }
         
-        await navigateWithRetry();
+        if (!navigationSucceeded) {
+          await browser.close();
+          throw new Error('navigation_failed');
+        }
         
         // Ensure the DOM is available even if navigation events didn't fire as expected
         await page.waitForSelector('body', { timeout: 5000 }).catch(() => {
@@ -370,7 +406,7 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
       }, 10000); // 10 seconds
       
       try {
-        const res = await fetch(productUrl, {
+        const res = await fetch(normalizedUrl, {
           signal: controller.signal,
           headers: {
             'User-Agent': ua,
@@ -379,7 +415,7 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
             'Cache-Control': retry ? 'no-cache' : 'max-age=0',
             'Pragma': 'no-cache',
             'Upgrade-Insecure-Requests': '1',
-            'Referer': new URL(productUrl).origin + '/',
+            'Referer': new URL(normalizedUrl).origin + '/',
             'Sec-Fetch-Dest': 'document',
             'Sec-Fetch-Mode': 'navigate',
             'Sec-Fetch-Site': 'same-origin',
@@ -388,7 +424,7 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
         clearTimeout(timeoutId);
         
         if (!res.ok) {
-          console.warn(`[ProductScrape] HTTP ${res.status} for ${productUrl}`);
+          console.warn(`[ProductScrape] HTTP ${res.status} for ${normalizedUrl}`);
           return null;
         }
         return await res.text();
@@ -397,7 +433,7 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
         
         // Check if it was a timeout
         if (fetchError?.name === 'AbortError' || controller.signal.aborted) {
-          console.warn(`[ProductScrape] Fetch timeout (10s) for ${productUrl}`);
+          console.warn(`[ProductScrape] Fetch timeout (10s) for ${normalizedUrl}`);
           return null;
         }
         throw fetchError;
@@ -405,7 +441,7 @@ export async function scrapeProductFromUrl(productUrl: string): Promise<ProductS
     } catch (error: any) {
       // Handle headers overflow (common with anti-bot) - this means we should use Puppeteer
       if (error?.code === 'UND_ERR_HEADERS_OVERFLOW' || error?.message?.includes('Headers Overflow')) {
-        console.warn(`[ProductScrape] Headers overflow for ${productUrl} - will use Puppeteer`);
+        console.warn(`[ProductScrape] Headers overflow for ${normalizedUrl} - will use Puppeteer`);
         return null; // Signal to use Puppeteer
       }
       throw error;
