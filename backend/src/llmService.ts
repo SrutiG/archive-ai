@@ -1409,12 +1409,12 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
     
     let parsed: any = null;
     let responseDuration = 0;
-    const maxGenerationAttempts = 3;
+    const maxGenerationAttempts = 1;
     for (let attempt = 1; attempt <= maxGenerationAttempts; attempt++) {
       const attemptStart = Date.now();
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 45000);
+        const timeout = setTimeout(() => controller.abort(), 60000);
         const response = await openai.chat.completions.create(
           {
             model: 'gpt-4o',
