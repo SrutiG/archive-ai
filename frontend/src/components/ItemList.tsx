@@ -107,7 +107,7 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
       {viewMode === 'all' ? (
         <div className="items-grid">
           {items.map((item) => (
-            <div key={item.id} className="item-card">
+            <div key={item.id} className="item-card" data-item-id={item.id}>
               <div className="item-image-container">
                 <StockPhotoImage
                   item={item}
@@ -149,7 +149,7 @@ const ItemList: React.FC<ItemListProps> = ({ items, onItemDeleted, onItemUpdated
               </Heading>
               <div className="items-grid">
                 {categoryItems.map((item) => (
-                  <div key={item.id} className="item-card">
+                  <div key={item.id} className="item-card" data-item-id={item.id}>
                     <div className="item-image-container">
                       <StockPhotoImage
                         item={item}

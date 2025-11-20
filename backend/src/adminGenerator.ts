@@ -77,6 +77,14 @@ const FABRIC_OPTIONS = [
   'satin',
   'velvet',
   'lace',
+  'modal',
+  'rayon',
+  'tencel',
+  'nylon',
+  'polyester',
+  'cupro',
+  'acetate',
+  'acrylic',
 ] as const;
 
 const FORMALITY_OPTIONS = [

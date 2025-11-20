@@ -200,14 +200,14 @@ if (!fs.existsSync(uploadsDir)) {
 const storage = supabaseStorage.isSupabaseConfigured()
   ? multer.memoryStorage() // Store in memory, then upload to Supabase
   : multer.diskStorage({
-      destination: (req, file, cb) => {
-        cb(null, uploadsDir);
-      },
-      filename: (req, file, cb) => {
-        const uniqueName = `${uuidv4()}-${file.originalname}`;
-        cb(null, uniqueName);
-      }
-    });
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${uuidv4()}-${file.originalname}`;
+    cb(null, uniqueName);
+  }
+});
 
 const upload = multer({ 
   storage,
@@ -229,20 +229,60 @@ export type WardrobeColorOption =
   | 'black'
   | 'white'
   | 'gray'
+  | 'charcoal'
+  | 'slate'
+  | 'silver'
   | 'navy'
   | 'blue'
+  | 'teal'
+  | 'turquoise'
+  | 'cyan'
+  | 'sky-blue'
+  | 'indigo'
   | 'green'
+  | 'emerald'
+  | 'mint'
+  | 'sage'
+  | 'forest'
+  | 'lime'
   | 'olive'
   | 'red'
+  | 'crimson'
+  | 'maroon'
+  | 'rust'
+  | 'terracotta'
   | 'burgundy'
   | 'pink'
+  | 'magenta'
+  | 'fuchsia'
+  | 'rose'
+  | 'coral'
+  | 'salmon'
   | 'purple'
+  | 'violet'
+  | 'eggplant'
+  | 'lilac'
+  | 'lavender'
+  | 'plum'
   | 'yellow'
+  | 'gold'
+  | 'mustard'
+  | 'amber'
   | 'orange'
+  | 'peach'
+  | 'apricot'
   | 'brown'
+  | 'chocolate'
+  | 'caramel'
+  | 'coffee'
+  | 'taupe'
   | 'tan'
   | 'beige'
   | 'cream'
+  | 'ivory'
+  | 'ecru'
+  | 'camel'
+  | 'khaki'
   | 'metallic'
   | 'multicolor'
   | 'other';
@@ -262,6 +302,14 @@ export type WardrobeFabricOption =
   | 'satin'
   | 'velvet'
   | 'lace'
+  | 'modal'
+  | 'rayon'
+  | 'tencel'
+  | 'nylon'
+  | 'polyester'
+  | 'cupro'
+  | 'acetate'
+  | 'acrylic'
   | 'other';
 
 export type WardrobePatternOption =
@@ -287,7 +335,25 @@ export type WardrobeSilhouetteOption =
   | 'bodycon'
   | 'wide-leg'
   | 'straight-leg'
+  | 'high-rise'
+  | 'mid-rise'
+  | 'low-rise'
   | 'cropped'
+  | 'hip-length'
+  | 'mid-thigh'
+  | 'waist-length'
+  | 'knee-length'
+  | 'long'
+  | 'ankle-length'
+  | 'full-length'
+  | 'capri'
+  | '7/8-length'
+  | '3/4-length'
+  | 'mini'
+  | 'midi'
+  | 'maxi'
+  | 'tea-length'
+  | 'floor-length'
   | 'long-sleeve'
   | 'short-sleeve'
   | 'sleeveless'
@@ -299,6 +365,7 @@ export type WardrobeSilhouetteOption =
   | 'turtleneck'
   | 'crew-neck'
   | 'scoop-neck'
+  | 'scoop'
   | 'square-neck'
   | 'sweetheart'
   | 'off-the-shoulder'
@@ -652,7 +719,7 @@ app.post('/api/reload', async (req, res) => {
 // Get all wardrobe items
 app.get('/api/items', async (req, res) => {
   try {
-    const userId = getUserFromRequest(req);
+  const userId = getUserFromRequest(req);
     console.log(`📥 GET /api/items - User ID: "${userId}", Headers:`, {
       'x-user-id': req.headers['x-user-id'],
       'X-User-Id': req.headers['x-user-id']
@@ -663,8 +730,8 @@ app.get('/api/items', async (req, res) => {
     
     if (userData.items.length > 0) {
       userData.items.slice(0, 3).forEach((item: WardrobeItem, index: number) => {
-        console.log(`  Item ${index + 1}: "${item.title}" (ID: ${item.id}, Category: ${item.category})`);
-      });
+    console.log(`  Item ${index + 1}: "${item.title}" (ID: ${item.id}, Category: ${item.category})`);
+  });
       if (userData.items.length > 3) {
         console.log(`  ... and ${userData.items.length - 3} more items`);
       }
@@ -673,7 +740,7 @@ app.get('/api/items', async (req, res) => {
       console.log(`  💡 This might mean the user doesn't exist in the database. Check if user ID is correct.`);
     }
     
-    res.json(userData.items);
+  res.json(userData.items);
   } catch (error) {
     console.error('❌ Error fetching items:', error);
     if (error instanceof Error) {
@@ -687,19 +754,19 @@ app.get('/api/items', async (req, res) => {
 // Get items grouped by category
 app.get('/api/items/by-category', async (req, res) => {
   try {
-    const userId = getUserFromRequest(req);
+  const userId = getUserFromRequest(req);
     const userData = await getUserData(userId);
     const grouped = userData.items.reduce((acc: Record<string, WardrobeItem[]>, item: WardrobeItem) => {
-      if (!acc[item.category]) {
-        acc[item.category] = [];
-      }
-      acc[item.category].push(item);
-      return acc;
-    }, {} as Record<string, WardrobeItem[]>);
-    
-    const categoryCount = Object.keys(grouped).length;
-    console.log(`Returning items grouped by ${categoryCount} categories for user ${userId}`);
-    res.json(grouped);
+    if (!acc[item.category]) {
+      acc[item.category] = [];
+    }
+    acc[item.category].push(item);
+    return acc;
+  }, {} as Record<string, WardrobeItem[]>);
+  
+  const categoryCount = Object.keys(grouped).length;
+  console.log(`Returning items grouped by ${categoryCount} categories for user ${userId}`);
+  res.json(grouped);
   } catch (error) {
     console.error('Error fetching items by category:', error);
     res.status(500).json({ error: 'Failed to fetch items by category' });
@@ -1137,12 +1204,12 @@ app.post('/api/outfits/generate', async (req, res) => {
 
     const groupItemsByCategory = (items: WardrobeItem[]): Record<string, WardrobeItem[]> => {
       return items.reduce((acc: Record<string, WardrobeItem[]>, item: WardrobeItem) => {
-        if (!acc[item.category]) {
-          acc[item.category] = [];
-        }
-        acc[item.category].push(item);
-        return acc;
-      }, {} as Record<string, WardrobeItem[]>);
+      if (!acc[item.category]) {
+        acc[item.category] = [];
+      }
+      acc[item.category].push(item);
+      return acc;
+    }, {} as Record<string, WardrobeItem[]>);
     };
 
     const calculateCoreCategoryCounts = (items: WardrobeItem[]): Record<CoreCategory, number> => {
@@ -1351,16 +1418,16 @@ app.post('/api/outfits/generate', async (req, res) => {
 // Get outfit generation status
 app.get('/api/outfits/status', async (req, res) => {
   try {
-    const userId = getUserFromRequest(req);
+  const userId = getUserFromRequest(req);
     await resetClickCounterIfNeeded(userId);
     const userData = await getUserData(userId);
-    const status = {
-      clicksUsed: userData.outfitGenerationClicks,
-      maxClicks: MAX_OUTFIT_CLICKS_PER_DAY,
-      remaining: MAX_OUTFIT_CLICKS_PER_DAY - userData.outfitGenerationClicks
-    };
-    console.log(`Outfit generation status for user ${userId}: ${status.clicksUsed}/${status.maxClicks} clicks used, ${status.remaining} remaining`);
-    res.json(status);
+  const status = {
+    clicksUsed: userData.outfitGenerationClicks,
+    maxClicks: MAX_OUTFIT_CLICKS_PER_DAY,
+    remaining: MAX_OUTFIT_CLICKS_PER_DAY - userData.outfitGenerationClicks
+  };
+  console.log(`Outfit generation status for user ${userId}: ${status.clicksUsed}/${status.maxClicks} clicks used, ${status.remaining} remaining`);
+  res.json(status);
   } catch (error) {
     console.error('Error fetching outfit status:', error);
     res.status(500).json({ error: 'Failed to fetch outfit status' });
@@ -1382,17 +1449,21 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
     }
     const { title, category, description, measurements, subCategory: providedSubCategory } = req.body;
     
-    if (!title) {
+    // Use existing values if not provided (allow partial updates)
+    const titleToUse = title || existingItem.title;
+    const categoryToUse = category || existingItem.category;
+    
+    if (!titleToUse) {
       console.error('Title is missing');
       return res.status(400).json({ error: 'Title is required' });
     }
 
-    if (!category) {
+    if (!categoryToUse) {
       console.error('Category is missing');
       return res.status(400).json({ error: 'Category is required' });
     }
 
-    console.log(`Updating item: "${existingItem.title}" -> "${title}"`);
+    console.log(`Updating item: "${existingItem.title}" -> "${titleToUse}"`);
 
     // Handle new photo upload if provided
     let imageUrl = existingItem.imageUrl;
@@ -1408,12 +1479,12 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
           }
         } else {
           // Delete from local storage
-          const oldFilePath = path.join(__dirname, '../uploads', path.basename(existingItem.imageUrl));
-          if (fs.existsSync(oldFilePath)) {
-            fs.unlinkSync(oldFilePath);
-            console.log(`Deleted old file: ${oldFilePath}`);
-          }
+        const oldFilePath = path.join(__dirname, '../uploads', path.basename(existingItem.imageUrl));
+        if (fs.existsSync(oldFilePath)) {
+          fs.unlinkSync(oldFilePath);
+          console.log(`Deleted old file: ${oldFilePath}`);
         }
+      }
       }
       
       // Upload new image
@@ -1437,7 +1508,7 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
         }
       } else {
         // Local storage (fallback when Supabase not configured)
-        imageUrl = `/uploads/${req.file.filename}`;
+      imageUrl = `/uploads/${req.file.filename}`;
       }
       console.log(`  New file: ${req.file.originalname} (${(req.file.size / 1024).toFixed(2)} KB)`);
     }
@@ -1493,12 +1564,12 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
     const brandValue = brandProvided ? parseTextField(req.body.brand) : '';
     const careNotesValue = careNotesProvided ? parseTextField(req.body.careNotes) : '';
 
-    const resolvedSubCategory = resolveSubCategory(category, providedSubCategory, title, description);
+    const resolvedSubCategory = resolveSubCategory(categoryToUse, providedSubCategory, titleToUse, description || existingItem.description);
 
     const updates: Partial<WardrobeItem> = {
-      title,
-      category,
-      description: description || undefined,
+      title: titleToUse,
+      category: categoryToUse,
+      description: description !== undefined ? (description || undefined) : existingItem.description,
       measurements: parsedMeasurements,
       imageUrl
     };
@@ -1573,22 +1644,22 @@ app.put('/api/items/:id', upload.single('photo'), async (req, res) => {
 // Delete an item
 app.delete('/api/items/:id', async (req, res) => {
   try {
-    const userId = getUserFromRequest(req);
-    const { id } = req.params;
-    console.log(`Deleting item with ID: ${id} for user ${userId}`);
-    
+  const userId = getUserFromRequest(req);
+  const { id } = req.params;
+  console.log(`Deleting item with ID: ${id} for user ${userId}`);
+  
     // Get item from database to check ownership and get imageUrl
     const item = await db.getItemById(id);
-    
+  
     if (!item || item.userId !== userId) {
       console.log(`Item not found or not owned by user: ${id} for user ${userId}`);
-      return res.status(404).json({ error: 'Item not found' });
-    }
+    return res.status(404).json({ error: 'Item not found' });
+  }
 
-    console.log(`Deleting item for user ${userId}: "${item.title}" (${item.category})`);
-    
-    // Delete the file if it exists
-    if (item.imageUrl) {
+  console.log(`Deleting item for user ${userId}: "${item.title}" (${item.category})`);
+  
+  // Delete the file if it exists
+  if (item.imageUrl) {
       if (supabaseStorage.isSupabaseConfigured()) {
         // Delete from Supabase
         try {
@@ -1598,23 +1669,23 @@ app.delete('/api/items/:id', async (req, res) => {
         }
       } else {
         // Delete from local storage
-        const filePath = path.join(__dirname, '../uploads', path.basename(item.imageUrl));
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-          console.log(`Deleted file: ${filePath}`);
-        } else {
-          console.log(`File not found: ${filePath}`);
-        }
-      }
+    const filePath = path.join(__dirname, '../uploads', path.basename(item.imageUrl));
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`Deleted file: ${filePath}`);
     } else {
-      console.log('No image file to delete (item has no imageUrl)');
+      console.log(`File not found: ${filePath}`);
+        }
     }
+  } else {
+    console.log('No image file to delete (item has no imageUrl)');
+  }
 
-    // Delete from database
+  // Delete from database
     await db.deleteItem(id);
     console.log(`Item deleted for user ${userId}`);
-    
-    res.json({ message: 'Item deleted successfully' });
+  
+  res.json({ message: 'Item deleted successfully' });
   } catch (error) {
     console.error('Error deleting item:', error);
     res.status(500).json({ error: 'Failed to delete item' });
@@ -1624,10 +1695,10 @@ app.delete('/api/items/:id', async (req, res) => {
 // Get user profile
 app.get('/api/user/profile', async (req, res) => {
   try {
-    const userId = getUserFromRequest(req);
+  const userId = getUserFromRequest(req);
     const userData = await getUserData(userId);
-    console.log(`Fetching user profile for user ${userId}`);
-    res.json(userData.userProfile || {});
+  console.log(`Fetching user profile for user ${userId}`);
+  res.json(userData.userProfile || {});
   } catch (error) {
     console.error('Error fetching user profile:', error);
     res.status(500).json({ error: 'Failed to fetch user profile' });
@@ -1831,9 +1902,9 @@ app.get('/api/stock-photo/:category', async (req, res) => {
 // Get saved outfits
 app.get('/api/outfits/saved', async (req, res) => {
   try {
-    const userId = getUserFromRequest(req);
+  const userId = getUserFromRequest(req);
     const userData = await getUserData(userId);
-    console.log(`Returning ${(userData.savedOutfits || []).length} saved outfits for user ${userId}`);
+  console.log(`Returning ${(userData.savedOutfits || []).length} saved outfits for user ${userId}`);
 
     const itemsById = new Map<string, WardrobeItem>();
     const titleLookup = new Map<string, string>();
@@ -1911,7 +1982,7 @@ app.post('/api/outfits/save', async (req, res) => {
     }
 
     if (missingTitles.length > 0) {
-      return res.status(400).json({
+      return res.status(400).json({ 
         error: 'Some items not found in wardrobe',
         invalidItems: missingTitles,
       });
@@ -1937,7 +2008,7 @@ app.post('/api/outfits/save', async (req, res) => {
     };
 
     await db.insertSavedOutfit(userId, newOutfit);
-
+    
     console.log(`Saved outfit with ${newOutfit.itemIds.length} items for user ${userId}`);
     res.status(201).json(newOutfit);
   } catch (error) {
@@ -2052,9 +2123,9 @@ app.post('/api/outfits/feedback', async (req, res) => {
 // Get all feedback
 app.get('/api/outfits/feedback', async (req, res) => {
   try {
-    const userId = getUserFromRequest(req);
+  const userId = getUserFromRequest(req);
     const userData = await getUserData(userId);
-    console.log(`Returning ${(userData.outfitFeedback || []).length} feedback entries for user ${userId}`);
+  console.log(`Returning ${(userData.outfitFeedback || []).length} feedback entries for user ${userId}`);
 
     const itemsById = new Map<string, WardrobeItem>();
     const titleLookup = new Map<string, string>();
@@ -2185,20 +2256,20 @@ app.delete('/api/outfits/feedback/:id', async (req, res) => {
 // Get explore suggestions
 app.get('/api/explore/suggestions', async (req, res) => {
   try {
-    const userId = getUserFromRequest(req);
+  const userId = getUserFromRequest(req);
     const userData = await getUserData(userId);
-    const today = new Date().toDateString();
-    const lastUpdate = userData.lastExploreUpdate || '';
-    const shouldUpdate = !lastUpdate || lastUpdate !== today;
-    
-    console.log(`Explore suggestions requested for user ${userId}. Last update: ${lastUpdate || 'never'}, Today: ${today}`);
-    console.log(`Should update: ${shouldUpdate}`);
-    
-    res.json({
-      suggestions: userData.exploreSuggestions || [],
-      lastUpdate: lastUpdate,
-      shouldUpdate
-    });
+  const today = new Date().toDateString();
+  const lastUpdate = userData.lastExploreUpdate || '';
+  const shouldUpdate = !lastUpdate || lastUpdate !== today;
+  
+  console.log(`Explore suggestions requested for user ${userId}. Last update: ${lastUpdate || 'never'}, Today: ${today}`);
+  console.log(`Should update: ${shouldUpdate}`);
+  
+  res.json({
+    suggestions: userData.exploreSuggestions || [],
+    lastUpdate: lastUpdate,
+    shouldUpdate
+  });
   } catch (error) {
     console.error('Error fetching explore suggestions:', error);
     res.status(500).json({ error: 'Failed to fetch explore suggestions' });
@@ -2327,19 +2398,19 @@ app.post('/api/explore/generate', async (req, res) => {
 
 // Only start server if not in test mode
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log('='.repeat(50));
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📁 Uploads directory: ${uploadsDir}`);
-    console.log(`🎯 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing'}`);
-    console.log(`📸 Pexels API Key: ${process.env.PEXELS_API_KEY ? '✅ Set' : '⚠️  Not set (will use Unsplash fallback)'}`);
+app.listen(PORT, () => {
+  console.log('='.repeat(50));
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`📁 Uploads directory: ${uploadsDir}`);
+  console.log(`🎯 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔑 OpenAI API Key: ${process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log(`📸 Pexels API Key: ${process.env.PEXELS_API_KEY ? '✅ Set' : '⚠️  Not set (will use Unsplash fallback)'}`);
     console.log(`🔍 Product Search:`);
     console.log(`   - Google Custom Search API: ${process.env.GOOGLE_SEARCH_API_KEY && process.env.GOOGLE_SEARCH_ENGINE_ID ? '✅ Set (PRIMARY - FREE, 100/day)' : '❌ Not set'}`);
     console.log(`   - SerpAPI: ${process.env.SERPAPI_KEY ? '✅ Set (optional premium)' : '❌ Not set'}`);
     console.log(`   - Etsy: ${process.env.ETSY_API_KEY ? '✅ Set' : '❌ Not set'}`);
-    console.log('='.repeat(50));
-  });
+  console.log('='.repeat(50));
+});
 }
 
 // Export app for testing

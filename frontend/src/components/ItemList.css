@@ -253,3 +253,19 @@
     margin-bottom: 1.5rem;
   }
 }
+
+.missing-field-highlight {
+  animation: highlightPulse 2s ease;
+  outline: 3px solid #ff6b6b;
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+@keyframes highlightPulse {
+  0%, 100% {
+    outline-color: #ff6b6b;
+  }
+  50% {
+    outline-color: #ff5252;
+  }
+}

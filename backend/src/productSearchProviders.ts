@@ -1006,6 +1006,11 @@ export class RakutenProvider implements ProductSearchProvider {
       'black', 'white', 'navy', 'blue', 'red', 'green', 'yellow', 'pink',
       'purple', 'orange', 'brown', 'gray', 'grey', 'beige', 'cream', 'ivory',
       'tan', 'khaki', 'olive', 'burgundy', 'maroon', 'coral', 'teal', 'turquoise',
+      'charcoal', 'slate', 'silver', 'cyan', 'sky-blue', 'indigo',
+      'emerald', 'mint', 'sage', 'forest', 'lime', 'crimson', 'rust', 'terracotta',
+      'magenta', 'fuchsia', 'rose', 'salmon', 'violet', 'eggplant', 'lilac',
+      'lavender', 'plum', 'gold', 'mustard', 'amber', 'peach', 'apricot',
+      'chocolate', 'caramel', 'coffee', 'taupe', 'ecru', 'camel',
     ];
     
     const foundColors = colorKeywords.filter(color => text.includes(color));

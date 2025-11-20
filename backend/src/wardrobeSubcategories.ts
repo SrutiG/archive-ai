@@ -40,6 +40,11 @@ export type WardrobeSubCategory =
   | 'Overalls'
   | 'Underwear & Sleepwear'
   | 'Swimwear'
+  | 'Blazer'
+  | 'Coat'
+  | 'Jacket'
+  | 'Trench'
+  | 'Cape'
   | 'Other';
 
 type SubcategoryDefinition = {
@@ -122,6 +127,14 @@ const CATEGORY_SUBCATEGORY_DEFINITIONS: Record<string, SubcategoryDefinition[]> 
   ],
   Swimwear: [
     { name: 'Swimwear', keywords: ['swim', 'bikini', 'swimsuit', 'one-piece', 'one piece', 'tankini', 'rashguard', 'rash guard', 'boardshort', 'board short', 'trunks'] },
+    DEFAULT_OTHER,
+  ],
+  Outerwear: [
+    { name: 'Blazer', keywords: ['blazer', 'sport coat', 'sportcoat'] },
+    { name: 'Coat', keywords: ['coat', 'overcoat', 'topcoat', 'peacoat', 'duffle coat', 'puffer', 'puffer coat', 'down coat'] },
+    { name: 'Jacket', keywords: ['jacket', 'bomber', 'denim jacket', 'leather jacket', 'windbreaker', 'wind breaker', 'parka', 'anorak', 'field jacket', 'moto jacket'] },
+    { name: 'Trench', keywords: ['trench', 'trench coat'] },
+    { name: 'Cape', keywords: ['cape', 'poncho', 'capelet'] },
     DEFAULT_OTHER,
   ],
 };

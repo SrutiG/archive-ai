@@ -6,6 +6,7 @@ import { Button, PageHeader } from '../design-system';
 import { apiGet, apiPost } from '../utils/api';
 import { useUser } from '../contexts/UserContext';
 import AddItemModal from '../components/AddItemModal';
+import MissingFieldsButton from '../components/MissingFieldsButton';
 
 interface WardrobePageProps {
   apiUrl: string;
@@ -59,6 +60,13 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
     fetchItems();
   };
 
+  // Update a single item in the state without refetching all items
+  const handleItemUpdated = (updatedItem: WardrobeItem) => {
+    setItems(prevItems => 
+      prevItems.map(item => item.id === updatedItem.id ? updatedItem : item)
+    );
+  };
+
   return (
     <div className="WardrobePage">
       <PageHeader
@@ -94,6 +102,14 @@ const WardrobePage: React.FC<WardrobePageProps> = ({ apiUrl }) => {
         loading={loading}
         setLoading={setLoading}
       />
+      
+      {!itemsLoading && (
+        <MissingFieldsButton
+          items={items}
+          onItemUpdated={handleItemUpdated}
+          apiUrl={apiUrl}
+        />
+      )}
     </div>
   );
 };
