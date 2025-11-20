@@ -56,8 +56,7 @@ function hasTopLength(item: WardrobeItem): boolean {
   
   // Bodysuits don't need length - they're one-piece garments
   const isBodysuit = item.title.toLowerCase().includes('bodysuit') ||
-                     item.subCategory?.toLowerCase().includes('bodysuit') ||
-                     item.sub_category?.toLowerCase().includes('bodysuit');
+                     item.subCategory?.toLowerCase().includes('bodysuit');
   if (isBodysuit) {
     return true; // Not required for bodysuits
   }

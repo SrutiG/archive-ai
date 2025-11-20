@@ -14,6 +14,7 @@ import {
   extractContextFilters,
   filterItemsForContext,
   buildContextFilterSummary,
+  extractAttributesFromDescription,
   type CoreCategory,
   type FilteredItemsResult,
 } from './llmService';
@@ -878,6 +879,12 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
 
     const resolvedSubCategory = resolveSubCategory(category, providedSubCategory, title, description);
 
+    // Extract attributes from description if not already provided
+    let extractedAttributes: { colors?: string[]; silhouettes?: string[]; pattern?: string; fit?: string } = {};
+    if (description && (!colorsProvided || !patternProvided || !fitProvided || !silhouettesProvided)) {
+      extractedAttributes = await extractAttributesFromDescription(description, title, category);
+    }
+
     const newItem: WardrobeItem = {
       id: uuidv4(),
       title,
@@ -887,18 +894,32 @@ app.post('/api/items', upload.single('photo'), async (req, res) => {
       description: description || undefined,
       measurements: parsedMeasurements,
       createdAt: new Date().toISOString(),
-      ...(colorsProvided && colors.length > 0 ? { colors: colors as WardrobeColorOption[] } : {}),
+      ...(colorsProvided && colors.length > 0
+        ? { colors: colors as WardrobeColorOption[] }
+        : extractedAttributes.colors && extractedAttributes.colors.length > 0
+        ? { colors: extractedAttributes.colors as WardrobeColorOption[] }
+        : {}),
       ...(fabricsProvided && fabrics.length > 0 ? { fabrics: fabrics as WardrobeFabricOption[] } : {}),
       ...(formalitiesProvided && formalities.length > 0 ? { formalities: formalities as WardrobeFormalityOption[] } : {}),
       ...(styleTagsProvided && styleTags.length > 0 ? { styleTags: styleTags as WardrobeStyleTagOption[] } : {}),
       ...(seasonsProvided && seasons.length > 0 ? { seasons: seasons as WardrobeSeasonOption[] } : {}),
       ...(occasionsProvided && occasions.length > 0 ? { occasions: occasions as WardrobeOccasionOption[] } : {}),
-      ...(patternValue ? { pattern: patternValue as WardrobePatternOption } : {}),
+      ...(patternValue
+        ? { pattern: patternValue as WardrobePatternOption }
+        : extractedAttributes.pattern
+        ? { pattern: extractedAttributes.pattern as WardrobePatternOption }
+        : {}),
       ...(silhouettesValue.length > 0
         ? { silhouettes: silhouettesValue as WardrobeSilhouetteOption[] }
+        : extractedAttributes.silhouettes && extractedAttributes.silhouettes.length > 0
+        ? { silhouettes: extractedAttributes.silhouettes as WardrobeSilhouetteOption[] }
         : {}),
       ...(silhouetteValue ? { silhouette: silhouetteValue as WardrobeSilhouetteOption } : {}),
-      ...(fitValue ? { fit: fitValue as WardrobeFitOption } : {}),
+      ...(fitValue
+        ? { fit: fitValue as WardrobeFitOption }
+        : extractedAttributes.fit
+        ? { fit: extractedAttributes.fit as WardrobeFitOption }
+        : {}),
       ...(brandValue ? { brand: brandValue as WardrobeBrandOption } : {}),
       ...(careNotesValue ? { careNotes: careNotesValue } : {})
     };
@@ -970,13 +991,26 @@ app.post('/api/items/batch', async (req, res) => {
         draft.description
       );
 
+      // Extract attributes from description
+      const extractedAttributes = draft.description
+        ? await extractAttributesFromDescription(draft.description, formattedTitle, draft.category)
+        : {};
+
       const newItem: WardrobeItem = {
         id: uuidv4(),
         title: formattedTitle,
         category: draft.category,
         ...(resolvedSubCategory ? { subCategory: resolvedSubCategory } : {}),
         description: draft.description,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        ...(extractedAttributes.colors && extractedAttributes.colors.length > 0
+          ? { colors: extractedAttributes.colors as WardrobeColorOption[] }
+          : {}),
+        ...(extractedAttributes.silhouettes && extractedAttributes.silhouettes.length > 0
+          ? { silhouettes: extractedAttributes.silhouettes as WardrobeSilhouetteOption[] }
+          : {}),
+        ...(extractedAttributes.pattern ? { pattern: extractedAttributes.pattern as WardrobePatternOption } : {}),
+        ...(extractedAttributes.fit ? { fit: extractedAttributes.fit as WardrobeFitOption } : {}),
       };
 
       await db.insertItem(newItem, userId);

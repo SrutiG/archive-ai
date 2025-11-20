@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { WardrobeItem, WardrobeColorOption, WardrobeSilhouetteOption } from '../App';
-import { checkMissingFields, MissingFieldInfo } from '../utils/checkMissingFields';
+import { checkMissingFields } from '../utils/checkMissingFields';
 import { COLOR_OPTIONS, SILHOUETTE_OPTIONS } from '../constants/wardrobeAttributes';
 import { apiPut } from '../utils/api';
 import StockPhotoImage from './StockPhotoImage';

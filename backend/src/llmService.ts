@@ -652,6 +652,234 @@ export interface GeneratedWardrobeDraftItem {
   subCategory?: string;
 }
 
+export interface ExtractedAttributes {
+  colors?: string[];
+  silhouettes?: string[];
+  pattern?: string;
+  fit?: string;
+}
+
+/**
+ * Extracts wardrobe attributes (colors, silhouettes, pattern, fit) from a description
+ * using LLM or keyword matching as fallback.
+ */
+export async function extractAttributesFromDescription(
+  description: string,
+  title: string,
+  category: string
+): Promise<ExtractedAttributes> {
+  const result: ExtractedAttributes = {};
+  
+  if (!description || !description.trim()) {
+    return result;
+  }
+
+  const combinedText = `${title} ${description}`.toLowerCase();
+  
+  // Color extraction using keyword matching with word boundaries
+  const colorKeywords: Record<string, string[]> = {
+    'black': ['black', 'ebony'],
+    'white': ['white', 'ivory', 'cream', 'ecru', 'off-white', 'off white'],
+    'gray': ['gray', 'grey'],
+    'charcoal': ['charcoal'],
+    'slate': ['slate'],
+    'silver': ['silver'],
+    'navy': ['navy', 'navy blue'],
+    'blue': ['blue', 'azure', 'cobalt'],
+    'sky-blue': ['sky blue', 'sky-blue'],
+    'teal': ['teal'],
+    'turquoise': ['turquoise'],
+    'cyan': ['cyan'],
+    'green': ['green', 'emerald', 'mint', 'sage', 'forest', 'lime', 'olive'],
+    'red': ['red', 'crimson', 'maroon', 'burgundy'],
+    'rust': ['rust'],
+    'terracotta': ['terracotta'],
+    'pink': ['pink', 'magenta', 'fuchsia', 'rose', 'coral', 'salmon'],
+    'purple': ['purple', 'violet', 'eggplant', 'lilac', 'lavender', 'plum'],
+    'yellow': ['yellow', 'gold', 'mustard', 'amber'],
+    'orange': ['orange', 'peach', 'apricot'],
+    'brown': ['brown', 'chocolate', 'caramel', 'coffee', 'taupe', 'tan', 'beige', 'camel', 'khaki'],
+  };
+  
+  // Use word boundary matching to avoid false positives
+  const foundColors: string[] = [];
+  for (const [color, keywords] of Object.entries(colorKeywords)) {
+    for (const keyword of keywords) {
+      // Use word boundaries to avoid matching substrings
+      const regex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (regex.test(combinedText)) {
+        foundColors.push(color);
+        break; // Only add color once
+      }
+    }
+  }
+  if (foundColors.length > 0) {
+    result.colors = foundColors;
+  }
+
+  // Pattern extraction
+  const patternKeywords: Record<string, string[]> = {
+    'solid': ['solid', 'plain'],
+    'striped': ['striped', 'stripes', 'stripe'],
+    'plaid': ['plaid', 'tartan'],
+    'check': ['check', 'checked', 'checkered', 'gingham'],
+    'floral': ['floral', 'flower', 'flowers', 'bloom'],
+    'animal': ['animal', 'leopard', 'zebra', 'snake', 'tiger', 'cheetah'],
+    'polka-dot': ['polka', 'dot', 'dots', 'dotted'],
+    'geometric': ['geometric', 'zigzag', 'chevron'],
+    'graphic': ['graphic', 'print', 'printed'],
+    'abstract': ['abstract'],
+    'textured': ['textured', 'texture', 'ribbed', 'knit'],
+  };
+  
+  for (const [pattern, keywords] of Object.entries(patternKeywords)) {
+    if (keywords.some(keyword => combinedText.includes(keyword))) {
+      result.pattern = pattern;
+      break;
+    }
+  }
+
+  // Fit extraction
+  const fitKeywords: Record<string, string[]> = {
+    'second-skin': ['second skin', 'bodycon', 'body-hugging', 'skin-tight', 'tight'],
+    'slim': ['slim', 'fitted', 'close-fitting'],
+    'regular': ['regular', 'standard'],
+    'relaxed': ['relaxed', 'loose', 'comfortable'],
+    'oversized': ['oversized', 'oversize', 'baggy', 'roomy'],
+    'tailored': ['tailored', 'structured'],
+  };
+  
+  for (const [fit, keywords] of Object.entries(fitKeywords)) {
+    if (keywords.some(keyword => combinedText.includes(keyword))) {
+      result.fit = fit;
+      break;
+    }
+  }
+
+  // Silhouette extraction - category-specific
+  const silhouetteKeywords: Record<string, string[]> = {
+    // Necklines - order matters: more specific first
+    'mock-neck': ['mock neck', 'mock-neck'],
+    'turtleneck': ['turtleneck', 'turtle neck'],
+    'v-neck': ['v-neck', 'v neck', 'vneck'],
+    'crew-neck': ['crew neck', 'crew-neck', 'round neck'],
+    'scoop-neck': ['scoop neck', 'scoop-neck'],
+    'boat-neck': ['boat neck', 'boat-neck'],
+    'off-the-shoulder': ['off shoulder', 'off-the-shoulder'],
+    'halter-neck': ['halter', 'halter neck'],
+    'cowl-neck': ['cowl', 'cowl neck'],
+    'hooded': ['hooded', 'with hood'],
+    'collared': ['collared', 'with collar'],
+    'lapel': ['lapel', 'blazer'],
+    // Sleeves
+    'long-sleeve': ['long sleeve', 'long-sleeve', 'long sleeved'],
+    'short-sleeve': ['short sleeve', 'short-sleeve', 'short sleeved'],
+    'sleeveless': ['sleeveless', 'tank', 'no sleeve'],
+    // Lengths (tops/outerwear)
+    'cropped': ['cropped', 'crop'],
+    'hip-length': ['hip length', 'hip-length'],
+    'waist-length': ['waist length', 'waist-length'],
+    'knee-length': ['knee length', 'knee-length'],
+    'long': ['long'],
+    // Lengths (bottoms/dresses)
+    'mini': ['mini', 'short'],
+    'midi': ['midi', 'mid-length'],
+    'maxi': ['maxi', 'long'],
+    'ankle-length': ['ankle', 'ankle length', 'ankle-length'],
+    'full-length': ['full length', 'full-length'],
+    'capri': ['capri'],
+    '7/8-length': ['7/8', 'seven eighths'],
+    '3/4-length': ['3/4', 'three quarters'],
+    // Pants
+    'wide-leg': ['wide leg', 'wide-leg', 'wide leg pants'],
+    'straight-leg': ['straight leg', 'straight-leg', 'straight'],
+    // Rise
+    'high-rise': ['high rise', 'high-rise', 'high waisted'],
+    'mid-rise': ['mid rise', 'mid-rise', 'mid waisted'],
+    'low-rise': ['low rise', 'low-rise', 'low waisted'],
+    // Dress shapes
+    'a-line': ['a-line', 'a line'],
+    'fit-and-flare': ['fit and flare', 'fit-and-flare'],
+    'bodycon': ['bodycon', 'body con'],
+    'column': ['column', 'sheath'],
+  };
+  
+  const foundSilhouettes: string[] = [];
+  for (const [silhouette, keywords] of Object.entries(silhouetteKeywords)) {
+    for (const keyword of keywords) {
+      // Use word boundary matching for better accuracy
+      const regex = new RegExp(`\\b${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[\\s-]')}\\b`, 'i');
+      if (regex.test(combinedText)) {
+        foundSilhouettes.push(silhouette);
+        break; // Only add silhouette once
+      }
+    }
+  }
+  if (foundSilhouettes.length > 0) {
+    result.silhouettes = foundSilhouettes;
+  }
+
+  // If we have some results, try LLM to enhance them
+  if (OPENAI_API_KEY && openai && description.length > 20) {
+    try {
+      const colorOptions = ['black', 'white', 'gray', 'charcoal', 'slate', 'silver', 'navy', 'blue', 'teal', 'turquoise', 'cyan', 'sky-blue', 'indigo', 'green', 'emerald', 'mint', 'sage', 'forest', 'lime', 'olive', 'red', 'crimson', 'maroon', 'rust', 'terracotta', 'burgundy', 'pink', 'magenta', 'fuchsia', 'rose', 'coral', 'salmon', 'purple', 'violet', 'eggplant', 'lilac', 'lavender', 'plum', 'yellow', 'gold', 'mustard', 'amber', 'orange', 'peach', 'apricot', 'brown', 'chocolate', 'caramel', 'coffee', 'taupe', 'tan', 'beige', 'cream', 'ivory', 'ecru', 'camel', 'khaki', 'metallic', 'multicolor', 'other'];
+      const silhouetteOptions = ['a-line', 'column', 'fit-and-flare', 'cocoon', 'trapeze', 'bodycon', 'wide-leg', 'straight-leg', 'high-rise', 'mid-rise', 'low-rise', 'cropped', 'hip-length', 'mid-thigh', 'waist-length', 'knee-length', 'long', 'ankle-length', 'full-length', 'capri', '7/8-length', '3/4-length', 'mini', 'midi', 'maxi', 'tea-length', 'floor-length', 'long-sleeve', 'short-sleeve', 'sleeveless', 'peplum', 'asymmetrical-hem', 'v-neck', 'boat-neck', 'mock-neck', 'turtleneck', 'crew-neck', 'scoop-neck', 'scoop', 'square-neck', 'sweetheart', 'off-the-shoulder', 'halter-neck', 'cowl-neck', 'hooded', 'collared', 'collarless', 'lapel', 'other'];
+      const patternOptions = ['solid', 'striped', 'plaid', 'check', 'floral', 'animal', 'polka-dot', 'geometric', 'graphic', 'abstract', 'textured', 'other'];
+      const fitOptions = ['second-skin', 'slim', 'regular', 'relaxed', 'oversized', 'tailored', 'other'];
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a wardrobe assistant. Extract attributes from a clothing item description. Return a JSON object with optional keys: "colors" (array of color strings from the provided list), "silhouettes" (array of silhouette strings from the provided list), "pattern" (single string from the provided list), "fit" (single string from the provided list). 
+
+IMPORTANT RULES:
+- Only include attributes that are EXPLICITLY mentioned in the description or title
+- Do NOT infer or guess attributes that are not clearly stated
+- For colors: only include colors that are directly mentioned (e.g., "white shirt" → white, not red)
+- For silhouettes: use exact matches (e.g., "mock neck" → mock-neck, NOT turtleneck)
+- Use exact strings from the provided lists
+- If an attribute is not mentioned, omit that key entirely`
+          },
+          {
+            role: 'user',
+            content: `Item: ${title}\nCategory: ${category}\nDescription: ${description}\n\nAvailable colors: ${colorOptions.join(', ')}\nAvailable silhouettes: ${silhouetteOptions.join(', ')}\nAvailable patterns: ${patternOptions.join(', ')}\nAvailable fits: ${fitOptions.join(', ')}\n\nExtract ONLY explicitly mentioned attributes as JSON.`
+          }
+        ],
+        max_tokens: 300,
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      });
+
+      const content = response.choices[0]?.message?.content?.trim();
+      if (content) {
+        try {
+          const parsed = JSON.parse(content);
+          if (parsed.colors && Array.isArray(parsed.colors) && parsed.colors.length > 0) {
+            result.colors = [...new Set([...(result.colors || []), ...parsed.colors])];
+          }
+          if (parsed.silhouettes && Array.isArray(parsed.silhouettes) && parsed.silhouettes.length > 0) {
+            result.silhouettes = [...new Set([...(result.silhouettes || []), ...parsed.silhouettes])];
+          }
+          if (parsed.pattern && typeof parsed.pattern === 'string') {
+            result.pattern = parsed.pattern;
+          }
+          if (parsed.fit && typeof parsed.fit === 'string') {
+            result.fit = parsed.fit;
+          }
+        } catch (parseError) {
+          console.warn('[LLM] Failed to parse attribute extraction response, using keyword results only');
+        }
+      }
+    } catch (error) {
+      console.warn('[LLM] Error extracting attributes with LLM, using keyword results only:', error);
+    }
+  }
+
+  return result;
+}
+
 function stripLeadingMarkers(value: string): string {
   return value.replace(/^[\s]*[-•*·+]+[\s]*/, '');
 }
