@@ -26,7 +26,12 @@ import type { FeedbackSignalSummary } from './outfitFeedback';
 dotenv.config();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
+// Configure OpenAI client with longer timeout for large requests
+const openai = OPENAI_API_KEY ? new OpenAI({ 
+  apiKey: OPENAI_API_KEY,
+  timeout: 120000, // 120 seconds default timeout
+  maxRetries: 0, // We handle retries ourselves
+}) : null;
 
 const CATEGORIES = [
   'Tops',
@@ -1621,6 +1626,7 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
     const userContent = typeof messages[1]?.content === 'string' ? messages[1].content : '';
     const totalContextLength = systemContent.length + userContent.length;
     
+    const estimatedTokens = Math.ceil(totalContextLength / 4);
     console.log(`[LLM] Context breakdown:`);
     console.log(`  System prompt: ${systemContent.length} chars (~${Math.ceil(systemContent.length / 4)} tokens)`);
     console.log(`  User prompt: ${userContent.length} chars (~${Math.ceil(userContent.length / 4)} tokens)`);
@@ -1633,16 +1639,31 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
     console.log(`    - Items description: ${itemsDescription.length} chars`);
     console.log(`    - All exact titles: ${allExactTitles.length} chars`);
     console.log(`    - Other instructions: ${userContent.length - userContext.length - selectedItemsContext.length - anchorContext.length - promptContext.length - feedbackContext.length - coreCategoryInstruction.length - itemsDescription.length - allExactTitles.length} chars`);
-    console.log(`  Total context: ${totalContextLength} chars (~${Math.ceil(totalContextLength / 4)} estimated tokens)`);
+    console.log(`  Total context: ${totalContextLength} chars (~${estimatedTokens} estimated tokens)`);
+    
+    // Warn if prompt is very large (might cause timeouts)
+    if (estimatedTokens > 80000) {
+      console.warn(`[LLM] WARNING: Very large prompt (~${estimatedTokens} tokens). This may cause timeouts or slow responses.`);
+    } else if (estimatedTokens > 50000) {
+      console.warn(`[LLM] Large prompt (~${estimatedTokens} tokens). Response may take longer than usual.`);
+    }
     
     let parsed: any = null;
     let responseDuration = 0;
     const maxGenerationAttempts = 1;
+    // Increased timeout to 120 seconds to handle large prompts and slow API responses
+    const API_TIMEOUT_MS = 120000;
+    
     for (let attempt = 1; attempt <= maxGenerationAttempts; attempt++) {
       const attemptStart = Date.now();
       try {
+        console.log(`[LLM] Starting OpenAI API call (attempt ${attempt}/${maxGenerationAttempts}, timeout: ${API_TIMEOUT_MS}ms)...`);
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 60000);
+        const timeout = setTimeout(() => {
+          console.error(`[LLM] API call timed out after ${API_TIMEOUT_MS}ms`);
+          controller.abort();
+        }, API_TIMEOUT_MS);
+        
         const response = await openai.chat.completions.create(
           {
             model: 'gpt-4o',
@@ -1692,11 +1713,28 @@ Otherwise, vary the items across outfits - use different tops, different bottoms
         }
       } catch (error) {
         responseDuration = Date.now() - attemptStart;
-        const isAbortError = error instanceof Error && error.name === 'AbortError';
+        const isAbortError = error instanceof Error && (error.name === 'AbortError' || error.message?.includes('aborted'));
+        const isTimeoutError = isAbortError && responseDuration >= API_TIMEOUT_MS - 1000; // Within 1 second of timeout
+        
         console.error(
           `[LLM] Error during OpenAI call (attempt ${attempt}, duration ${responseDuration}ms):`,
           error
         );
+        if (error instanceof Error) {
+          console.error(`[LLM] Error name: ${error.name}, message: ${error.message}`);
+          if (error.stack) {
+            console.error(`[LLM] Stack trace: ${error.stack.substring(0, 500)}`);
+          }
+        }
+        
+        if (isTimeoutError) {
+          console.error(`[LLM] Request timed out after ${responseDuration}ms. This may indicate:
+            - The prompt is too large (current: ~${Math.ceil(totalContextLength / 4)} tokens)
+            - Network latency issues
+            - OpenAI API is experiencing high load
+          Consider reducing the number of items or simplifying the prompt.`);
+        }
+        
         if (attempt >= maxGenerationAttempts || isAbortError) {
           throw error;
         }
